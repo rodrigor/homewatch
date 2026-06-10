@@ -280,6 +280,7 @@ while true; do
   process_reminders
   process_screen_nudges
   process_habits
+  echo "$(date +%s)" > "$STATE/heartbeat"   # watchdog: prova de vida do loop
   RESP=$(curl -s --max-time 60 "$API/getUpdates?offset=${OFFSET}&timeout=50")
   [ -z "$RESP" ] && sleep 2 && continue
   while IFS= read -r upd; do
@@ -344,6 +345,12 @@ while true; do
       case "$pfx" in opus|sonnet|haiku) USEMODEL="$pfx"; text="${text#*:}"; text="${text# }";; esac
     fi
     tg_typing "$chat"
+    # typing heartbeat: renova "digitando..." a cada 5s enquanto claude processa
+    ( while true; do sleep 5; tg_typing "$chat"; done ) &
+    HBPID=$!
+    # status message se demorar mais de 40s
+    ( sleep 40 && tg "$chat" "⏳ Operação em andamento, aguarde..." ) &
+    STATPID=$!
     SYS=$(cat <<'ENDSYS'
 Você é o "PIrrai", assistente que opera o Raspberry Pi de casa (Pi-hole/DNS, Debian 13) via Telegram, em pt-BR. Poder total no sistema (sudo sem senha). Seja conciso (resposta de chat, não relatório gigante). Confirme o que fez.
 DADOS: Pi-hole em /etc/pihole/pihole-FTL.db (sqlite, view queries com timestamp,status,domain,client; bloqueio = status IN (1,4,5,6,7,8,9,10,11,15)). Rede: arp-scan, nmap, ip.
@@ -360,8 +367,29 @@ Hábito atual do Rodrigo: Exercício físico, meta 3x/semana.
 ENDSYS
 )
     if [ -f "$SESSION_FLAG" ]; then CONT="--continue"; else CONT=""; touch "$SESSION_FLAG"; fi
-    REPLY=$(cd "$WORKDIR" && claude -p $CONT --model "$USEMODEL" --dangerously-skip-permissions --system-prompt "$SYS" "$text" 2>>"$STATE/agent.log")
-    [ -z "$REPLY" ] && REPLY="(sem resposta — veja state/agent.log)"
+    REPLY=$(cd "$WORKDIR" && timeout "${CLAUDE_TIMEOUT:-180}" claude -p $CONT --model "$USEMODEL" --dangerously-skip-permissions --system-prompt "$SYS" "$text" 2>>"$STATE/agent.log")
+    CLAUDE_EXIT=$?
+    # para os processos de background
+    kill "$HBPID" "$STATPID" 2>/dev/null; wait "$HBPID" "$STATPID" 2>/dev/null
+    # --- recuperação automática ---
+    if [ -z "$REPLY" ]; then
+      if [ "$CLAUDE_EXIT" -eq 124 ]; then
+        # timeout: avisa mas mantém sessão intacta
+        tg "$chat" "⏱️ A operação demorou mais de ${CLAUDE_TIMEOUT:-180}s e foi interrompida. Tente novamente ou use /reset se o problema persistir."
+      else
+        # Nível 1: retry sem --continue (sessão limpa)
+        rm -f "$SESSION_FLAG"
+        REPLY=$(cd "$WORKDIR" && timeout "${CLAUDE_TIMEOUT:-180}" claude -p --model "$USEMODEL" --dangerously-skip-permissions --system-prompt "$SYS" "$text" 2>>"$STATE/agent.log")
+        if [ -n "$REPLY" ]; then
+          REPLY="[⚠️ Sessão reiniciada automaticamente]
+
+$REPLY"
+        else
+          # Nível 2: falha definitiva
+          REPLY="❌ Não consegui processar sua mensagem. Verifique state/agent.log para detalhes. Use /reset para limpar o contexto e tente novamente."
+        fi
+      fi
+    fi
     tg_send_long "$chat" "$REPLY"
     [ "${WANT_VOICE:-0}" = "1" ] && speak_to "$chat" "$REPLY"
   done < <(echo "$RESP" | jq -c '.result[]?' 2>/dev/null)

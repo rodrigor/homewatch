@@ -1,0 +1,17 @@
+[Unit]
+Description=PIrrai — watchdog do homewatch-agent
+After=homewatch-agent.service network-online.target
+Wants=homewatch-agent.service network-online.target
+
+[Service]
+Type=simple
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor
+ExecStart=/home/rodrigor/homewatch/homewatch-watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
