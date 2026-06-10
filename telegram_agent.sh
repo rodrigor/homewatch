@@ -16,18 +16,25 @@ get_model(){ cat "$MODEL_FILE" 2>/dev/null || echo "${CLAUDE_MODEL:-sonnet}"; }
 WORKDIR="$DIR/agentwork"   # sessão isolada do agente (não colide com a sessão interativa em /home/rodrigor)
 mkdir -p "$STATE"
 
-tg(){ # tg <chat_id> <texto>  (texto puro, sem markdown — evita erro 400)
+tg(){ # tg <chat_id> <texto>  (texto puro — mensagens do sistema)
   curl -s -X POST "$API/sendMessage" \
     --data-urlencode "chat_id=$1" \
     --data-urlencode "text=$2" \
     --data-urlencode "disable_web_page_preview=true" >/dev/null
 }
+tg_html(){ # tg_html <chat_id> <texto_html>  (respostas do Claude com parse_mode=HTML)
+  curl -s -X POST "$API/sendMessage" \
+    --data-urlencode "chat_id=$1" \
+    --data-urlencode "text=$2" \
+    --data-urlencode "parse_mode=HTML" \
+    --data-urlencode "disable_web_page_preview=true" >/dev/null
+}
 tg_typing(){ curl -s -X POST "$API/sendChatAction" --data-urlencode "chat_id=$1" --data-urlencode "action=typing" >/dev/null; }
-tg_send_long(){ # divide em blocos de 3900
+tg_send_long(){ # divide em blocos de 3900 com parse_mode=HTML (respostas do Claude)
   local cid="$1" txt="$2"
-  if [ "${#txt}" -le 3900 ]; then tg "$cid" "$txt"; return; fi
+  if [ "${#txt}" -le 3900 ]; then tg_html "$cid" "$txt"; return; fi
   printf '%s' "$txt" | split -b 3900 - /tmp/hw_ag_
-  for f in /tmp/hw_ag_*; do tg "$cid" "$(cat "$f")"; done; rm -f /tmp/hw_ag_*
+  for f in /tmp/hw_ag_*; do tg_html "$cid" "$(cat "$f")"; done; rm -f /tmp/hw_ag_*
 }
 tg_voice(){ curl -s -F "chat_id=$1" -F "voice=@$2" "$API/sendVoice" >/dev/null; }
 transcribe_voice(){ # <file_id> -> texto (stdout)
@@ -364,6 +371,7 @@ HABITOS (coach de bons hábitos; ferramenta /home/rodrigor/homewatch/habit.sh; h
 - Progresso: habit.sh status Rodrigo (formato nome|feitos|meta|streak|metrica-da-semana). Hábitos de leitura usariam paginas/capitulos; corrida km; etc.
 - Criar hábito novo: se pedir, faça mini-entrevista curta (qual, por quê, meta tipo Nx/semana ou diário, versão minizinha) e crie: habit.sh create Rodrigo <weekly_count|daily> <meta> <nome>; ajuste com habit.sh set Rodrigo <nome> why|tiny|cue_time <valor>. Confirme.
 Hábito atual do Rodrigo: Exercício físico, meta 3x/semana.
+FORMATO DE RESPOSTA (obrigatório): use HTML do Telegram — <b>negrito</b>, <i>itálico</i>, <code>código inline</code>, <pre>bloco de código</pre>. NÃO use Markdown (**, ##, __, ~~, ---). Listas com • ou números. Sem tabelas complexas. Seja conciso.
 ENDSYS
 )
     if [ -f "$SESSION_FLAG" ]; then CONT="--continue"; else CONT=""; touch "$SESSION_FLAG"; fi
