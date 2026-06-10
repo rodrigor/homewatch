@@ -1,0 +1,24 @@
+# Segredos e configuração local
+config.env
+email.env
+web/admin_token.txt
+
+# Dados pessoais e runtime
+state/
+agentwork/
+print_queue/
+email_inbox/
+habits/
+kids/
+reminders.json
+
+# Banco de dados (inventário — rebuild via Pi-hole)
+web/devices.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log

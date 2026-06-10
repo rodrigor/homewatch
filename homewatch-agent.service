@@ -1,0 +1,19 @@
+[Unit]
+Description=Homewatch — assistente Claude via Telegram (agente total)
+After=network-online.target pihole-FTL.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor
+ExecStart=/home/rodrigor/homewatch/telegram_agent.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=PIrrai — inventário web de dispositivos da casa
+After=network-online.target pihole-FTL.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rodrigor
+Group=rodrigor
+SupplementaryGroups=pihole
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch/web
+ExecStart=/usr/bin/python3 /home/rodrigor/homewatch/web/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
