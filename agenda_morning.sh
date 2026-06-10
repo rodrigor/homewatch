@@ -3,7 +3,7 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-TODAY=$("$DIR/todoist.sh" list "today" 2>/dev/null)
+TODAY=$("$DIR/todoist.sh" list "today" 2>/dev/null | sed -E 's/ \[#[^]]*\]$//')
 [ -z "$TODAY" ] && TODAY="(vazio)"
 OV=$("$DIR/todoist.sh" list "overdue" 2>/dev/null)
 if [ "$OV" = "(vazio)" ] || [ -z "$OV" ]; then OVN=0; else OVN=$(printf '%s\n' "$OV" | grep -c '^•'); fi
