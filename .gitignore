@@ -1,6 +1,7 @@
 # Segredos e configuração local
 config.env
 email.env
+todoist.env
 web/admin_token.txt
 
 # Dados pessoais e runtime
