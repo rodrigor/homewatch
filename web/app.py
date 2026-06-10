@@ -123,7 +123,8 @@ def api_devices():
 
 @app.route("/api/authcheck")
 def api_authcheck():
-    return jsonify(ok=(ADMIN_TOKEN != "" and request.args.get("token", "") == ADMIN_TOKEN))
+    # token via header (não query string) p/ não vazar em logs de acesso
+    return jsonify(ok=(ADMIN_TOKEN != "" and request.headers.get("X-Auth-Token", "") == ADMIN_TOKEN))
 
 @app.route("/api/device/<mac>", methods=["POST"])
 def api_save(mac):
@@ -290,11 +291,11 @@ function setUnlocked(v){unlocked=v;if(!v){token='';localStorage.removeItem('hw_t
 async function toggleLock(){
   if(unlocked){setUnlocked(false);return}
   const t=prompt('Cole a senha para liberar a edição:');if(!t)return;
-  const j=await(await fetch('/api/authcheck?token='+encodeURIComponent(t.trim()))).json();
+  const j=await(await fetch('/api/authcheck',{headers:{'X-Auth-Token':t.trim()}})).json();
   if(j.ok){token=t.trim();localStorage.setItem('hw_token',token);unlocked=true;updateLockBtn();render()}else alert('Senha incorreta.');
 }
 (async()=>{
-  if(token){try{const j=await(await fetch('/api/authcheck?token='+encodeURIComponent(token))).json();unlocked=!!j.ok}catch(e){}}
+  if(token){try{const j=await(await fetch('/api/authcheck',{headers:{'X-Auth-Token':token}})).json();unlocked=!!j.ok}catch(e){}}
   updateLockBtn(); await load(); setInterval(load,30000);
 })();
 </script></body></html>"""

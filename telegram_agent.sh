@@ -23,23 +23,36 @@ tg(){ # tg <chat_id> <texto>  (texto puro — mensagens do sistema)
     --data-urlencode "disable_web_page_preview=true" >/dev/null
 }
 tg_html(){ # tg_html <chat_id> <texto_html>  (respostas do Claude com parse_mode=HTML)
-  curl -s -X POST "$API/sendMessage" \
+  # se o Telegram rejeitar o HTML (tag quebrada etc.), reenvia como texto puro p/ não perder a mensagem
+  local ok
+  ok=$(curl -s -X POST "$API/sendMessage" \
     --data-urlencode "chat_id=$1" \
     --data-urlencode "text=$2" \
     --data-urlencode "parse_mode=HTML" \
-    --data-urlencode "disable_web_page_preview=true" >/dev/null
+    --data-urlencode "disable_web_page_preview=true" | jq -r '.ok // false')
+  [ "$ok" = "true" ] || tg "$1" "$2"
 }
 tg_typing(){ curl -s -X POST "$API/sendChatAction" --data-urlencode "chat_id=$1" --data-urlencode "action=typing" >/dev/null; }
 normalize_html(){ # converte Markdown→HTML (ponto único de normalização para Telegram)
   python3 "$DIR/normalize.py" html "$1"
 }
-tg_send_long(){ # normaliza MD→HTML, divide em blocos de 3900 e envia com parse_mode=HTML
-  local cid="$1" raw="$2"
-  local txt
+tg_send_long(){ # normaliza MD→HTML e envia; divide em blocos de ~3900 quebrando em LINHAS
+  # (split -b cortava bytes no meio de tag HTML ou de caractere UTF-8 → Telegram rejeitava o bloco)
+  local cid="$1" raw="$2" txt chunk="" line nl=$'\n'
   txt=$(normalize_html "$raw")
   if [ "${#txt}" -le 3900 ]; then tg_html "$cid" "$txt"; return; fi
-  printf '%s' "$txt" | split -b 3900 - /tmp/hw_ag_
-  for f in /tmp/hw_ag_*; do tg_html "$cid" "$(cat "$f")"; done; rm -f /tmp/hw_ag_*
+  while IFS= read -r line; do
+    while [ "${#line}" -gt 3900 ]; do  # linha gigante (sem \n): corte duro por caracteres
+      [ -n "$chunk" ] && { tg_html "$cid" "$chunk"; chunk=""; }
+      tg_html "$cid" "${line:0:3900}"; line="${line:3900}"
+    done
+    if [ $(( ${#chunk} + ${#line} + 1 )) -gt 3900 ]; then
+      tg_html "$cid" "$chunk"; chunk="$line"
+    else
+      chunk="${chunk}${chunk:+$nl}${line}"
+    fi
+  done <<< "$txt"
+  [ -n "$chunk" ] && tg_html "$cid" "$chunk"
 }
 tg_voice(){ curl -s -F "chat_id=$1" -F "voice=@$2" "$API/sendVoice" >/dev/null; }
 transcribe_voice(){ # <file_id> -> texto (stdout)
@@ -113,27 +126,38 @@ process_print_queue(){ # imprime pendentes se a impressora estiver online
 
 KID_MAX_PAGES=20
 KID_DAILY_MAX=15
+kid_quota_take(){ # <arquivo_contador> — reserva 1 da cota diária; falha (exit 1) se estourou
+  ( flock 9
+    local c; c=$(cat "$1" 2>/dev/null || echo 0)
+    [ "$c" -ge "$KID_DAILY_MAX" ] && exit 1
+    echo $((c + 1)) > "$1"
+  ) 9>>"$1.lock"
+}
+kid_quota_refund(){ # <arquivo_contador> — devolve 1 à cota (download/formato falhou)
+  ( flock 9
+    local c; c=$(cat "$1" 2>/dev/null || echo 0)
+    [ "$c" -gt 0 ] && echo $((c - 1)) > "$1"
+  ) 9>>"$1.lock"
+}
 kid_print(){ # <chat> <file_id> <nome> <caption> <KidName> — impressão com limites
   local cid="$1" fid="$2" name="$3" cap="$4" kn="$5"
-  local day cntf cnt fp tmp mime
-  day=$(date +%Y%m%d); cntf="$DIR/kids/$kn/printcount_$day"
-  cnt=$(cat "$cntf" 2>/dev/null || echo 0)
-  if [ "$cnt" -ge "$KID_DAILY_MAX" ]; then
+  local day cntf fp tmp mime
+  day=$(date +%Y%m%d); mkdir -p "$DIR/kids/$kn"; cntf="$DIR/kids/$kn/printcount_$day"
+  if ! kid_quota_take "$cntf"; then
     tg "$cid" "📵 Você já imprimiu bastante hoje ($KID_DAILY_MAX). Amanhã libera de novo! Se precisar mesmo, fala com o papai. 😊"; return
   fi
   fp=$(curl -s "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
-  [ -z "$fp" ] && { tg "$cid" "❌ Não consegui baixar o arquivo."; return; }
+  [ -z "$fp" ] && { kid_quota_refund "$cntf"; tg "$cid" "❌ Não consegui baixar o arquivo."; return; }
   tmp="$PQ/$(date +%s)~~1-${KID_MAX_PAGES}~~$(echo "$name" | tr -c 'A-Za-z0-9._-' '_')"
   curl -s -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}"
   mime=$(file -b --mime-type "$tmp" 2>/dev/null)
-  case "$mime" in application/pdf|image/*|text/*) : ;; *) rm -f "$tmp"; tg "$cid" "⚠️ Só consigo imprimir PDF, foto ou texto. 😊"; return;; esac
+  case "$mime" in application/pdf|image/*|text/*) : ;; *) rm -f "$tmp"; kid_quota_refund "$cntf"; tg "$cid" "⚠️ Só consigo imprimir PDF, foto ou texto. 😊"; return;; esac
   if printer_online; then
     lp -d "$PRINTER" -P "1-$KID_MAX_PAGES" -t "$name" "$tmp" >/dev/null 2>&1 && tg "$cid" "🖨️ Imprimindo \"$name\" (até $KID_MAX_PAGES págs)! Vai sair na impressora. 😊"
     rm -f "$tmp"
   else
     tg "$cid" "📥 Recebi \"$name\"! Mas a impressora tá desligada agora — quando ligarem eu imprimo automaticamente. 😉"
   fi
-  echo $((cnt + 1)) > "$cntf"
   [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg "$TELEGRAM_CHAT_ID" "🖨️ $kn imprimiu \"$name\" ($mime)."
 }
 
@@ -193,12 +217,13 @@ process_reminders(){
     [ -n "$prev" ] && arrivals=$(comm -13 <(printf '%s\n' "$prev") <(printf '%s\n' "$cur"))
     printf '%s\n' "$cur" > "$STATE/online_prev.txt"
   fi
-  local id type target at message fire m macs
+  local id type target at message fire m macs tq
   while IFS=$'\t' read -r id type target at message; do
     fire=0
     [ "$type" = "time" ] && [ "$now" -ge "$at" ] && fire=1
     if [ "$type" = "presence" ] && [ -n "$arrivals" ]; then
-      macs=$(sqlite3 "$DIR/web/devices.db" "SELECT lower(mac) FROM device_meta WHERE lower(owner)=lower('$target')" 2>/dev/null)
+      tq=${target//\'/\'\'}   # escapa aspas simples p/ o literal SQL
+      macs=$(sqlite3 "$DIR/web/devices.db" "SELECT lower(mac) FROM device_meta WHERE lower(owner)=lower('$tq')" 2>/dev/null)
       for m in $macs; do printf '%s\n' "$arrivals" | grep -qx "$m" && fire=1; done
     fi
     if [ "$fire" = "1" ]; then
