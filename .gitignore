@@ -15,6 +15,9 @@ reminders.json
 # Banco de dados (inventário — rebuild via Pi-hole)
 web/devices.db
 
+# Banco BGStats (dados pessoais, rebuild via import do BGStatsExport.json)
+bgstats.db
+
 # Python
 __pycache__/
 *.pyc

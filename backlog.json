@@ -1,0 +1,52 @@
+{
+  "backlog": [
+    {
+      "id": "1781074240",
+      "title": "Daily Digest por e-mail",
+      "description": "Cron às 05h que coleta RSS de fontes confiáveis (assunto configurável: IA, tech, etc.), resume com Claude em pt-BR e envia HTML bonito para rodrigor@rodrigor.com. Stack: bash+python3 parse RSS, Claude API curadoria, SMTP existente. Config em digest.json (fontes, assunto, destinatário).",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781074438",
+      "title": "Integrar vaults do Obsidian",
+      "description": "Acesso aos vaults do Obsidian via PIrrai: buscar notas, criar/editar notas, consultar conhecimento pessoal pelo Telegram. Definir vault path, formato de integração (leitura direta dos .md ou API do Obsidian) e quais operações suportar.",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781074519",
+      "title": "Gestão de alunos Ayty no PIrrai",
+      "description": "Sistema de gestão dos alunos do Ayty integrado ao PIrrai. Fase 1: banco de dados (SQLite ou Postgres) com modelo de dados dos alunos + interface web de visualização (similar ao painel homewatch). Fase 2: operações via Telegram (consultar aluno, registrar presença, notas, etc.). Definir campos do modelo e quais relatórios/visualizações são necessários.",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781074636",
+      "title": "Registro de atividades e relatório mensal (Ayty/Uaná)",
+      "description": "Registrar atividades dos projetos Ayty e Uaná via Telegram ao longo do mês (ex.: 'trabalhei 2h no módulo X do Ayty'). No final do mês, gerar relatório consolidado por projeto com horas, entregas e destaques — enviado por e-mail e/ou acessível no painel web. Definir: campos por atividade (projeto, horas, descrição, data), formato do relatório e dia de geração automática.",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781074712",
+      "title": "Integração com Todoist",
+      "description": "Conectar PIrrai à API REST do Todoist via token pessoal (salvo em config.env). Operações via Telegram: listar tarefas/projetos, criar tarefa, completar tarefa, buscar por projeto (ex.: 'o que tenho pendente no Ayty?'). Stack: curl + jq, sem biblioteca externa. Possível integração futura com registro de atividades Ayty/Uaná.",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781074865",
+      "title": "Integração com Google Calendar",
+      "description": "Conectar PIrrai ao Google Calendar via OAuth 2.0 (ou CalDAV como alternativa mais simples). Fluxo OAuth feito uma vez; refresh token salvo em config. Operações: ver eventos do dia/semana ('o que tenho hoje?'), criar evento ('cria reunião sexta às 14h'), lembrete de evento próximo via Telegram. Avaliar OAuth 2.0 vs CalDAV na hora de implementar.",
+      "status": "backlog",
+      "created": "2026-06-10",
+      "notes": ""
+    }
+  ]
+}

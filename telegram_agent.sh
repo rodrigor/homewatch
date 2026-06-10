@@ -30,8 +30,13 @@ tg_html(){ # tg_html <chat_id> <texto_html>  (respostas do Claude com parse_mode
     --data-urlencode "disable_web_page_preview=true" >/dev/null
 }
 tg_typing(){ curl -s -X POST "$API/sendChatAction" --data-urlencode "chat_id=$1" --data-urlencode "action=typing" >/dev/null; }
-tg_send_long(){ # divide em blocos de 3900 com parse_mode=HTML (respostas do Claude)
-  local cid="$1" txt="$2"
+normalize_html(){ # converte Markdown→HTML (ponto único de normalização para Telegram)
+  python3 "$DIR/normalize.py" html "$1"
+}
+tg_send_long(){ # normaliza MD→HTML, divide em blocos de 3900 e envia com parse_mode=HTML
+  local cid="$1" raw="$2"
+  local txt
+  txt=$(normalize_html "$raw")
   if [ "${#txt}" -le 3900 ]; then tg_html "$cid" "$txt"; return; fi
   printf '%s' "$txt" | split -b 3900 - /tmp/hw_ag_
   for f in /tmp/hw_ag_*; do tg_html "$cid" "$(cat "$f")"; done; rm -f /tmp/hw_ag_*
@@ -336,14 +341,36 @@ while true; do
     fi
 
     # ===== CAMINHO ADMIN =====
-    if [ -n "$doc_id" ]; then print_telegram_file "$chat" "$doc_id" "$doc_name" "$caption"; continue; fi
-    if [ -n "$photo_id" ]; then print_telegram_file "$chat" "$photo_id" "foto.jpg" "$caption"; continue; fi
+    # foto ou documento: imprime só se a legenda pedir explicitamente; caso contrário analisa com Claude
+    if [ -n "$doc_id" ] || [ -n "$photo_id" ]; then
+      if echo "$caption" | grep -qiE '(imprimir|imprima|imprime|impressao|print)'; then
+        # pedido explícito de impressão
+        if [ -n "$doc_id" ]; then
+          print_telegram_file "$chat" "$doc_id" "$doc_name" "$caption"
+        else
+          print_telegram_file "$chat" "$photo_id" "foto.jpg" "$caption"
+        fi
+        continue
+      else
+        # sem pedido de impressão → baixa e analisa com Claude
+        UPFID="${photo_id:-$doc_id}"
+        UPNAME="${doc_name:-foto.jpg}"; [ -n "$photo_id" ] && UPNAME="foto.jpg"
+        UPFP=$(curl -s "$API/getFile?file_id=$UPFID" | jq -r '.result.file_path // empty')
+        if [ -z "$UPFP" ]; then tg "$chat" "❌ Não consegui baixar o arquivo."; continue; fi
+        UPTMP="$WORKDIR/upload_$(date +%s)_${UPNAME//[^A-Za-z0-9._-]/_}"
+        curl -s -o "$UPTMP" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${UPFP}"
+        text="Arquivo recebido: $UPNAME (caminho: $UPTMP)"
+        [ -n "$caption" ] && text="$text — legenda/pergunta do usuário: $caption"
+        text="$text. Leia e analise o arquivo usando a ferramenta Read. Para imprimir, o usuário deve dizer explicitamente 'imprimir'."
+        # não faz continue: cai no bloco do Claude abaixo
+      fi
+    fi
     [ -z "$text" ] && continue
     case "$text" in
       /reset|/novo) rm -f "$SESSION_FLAG"; tg "$chat" "🧹 Conversa reiniciada."; continue;;
       /opus|/sonnet|/haiku) m="${text#/}"; echo "$m" > "$MODEL_FILE"; tg "$chat" "🧠 Modelo padrão agora: $m."; continue;;
       /modelo|/model) tg "$chat" "🧠 Modelo atual: $(get_model). Troque com /opus, /sonnet ou /haiku. Para uma pergunta só, use prefixo — ex.: opus: analise a fundo o dispositivo .104"; continue;;
-      /start|/help) tg "$chat" "Sou o PIrrai (agente total no Pi). Pergunte ou peça ações (status, rede, Pi-hole, serviços...). 🖨️ Envie PDF/foto p/ imprimir — com LEGENDA para escolher páginas (ex.: '1' = só a 1ª, '2-4' = da 2 à 4, sem legenda = todas). 🧠 Modelo: $(get_model) — /opus mais raciocínio, /sonnet padrão, ou prefixo 'opus:' numa pergunta. /reset limpa o contexto."; continue;;
+      /start|/help) tg "$chat" "Sou o PIrrai (agente total no Pi). Pergunte ou peça ações (status, rede, Pi-hole, serviços...). 📷 Envie foto/print → analiso o conteúdo. 🖨️ Para imprimir, diga 'imprimir' na legenda (ex.: 'imprimir p. 1-3'). 🧠 Modelo: $(get_model) — /opus mais raciocínio, /sonnet padrão, ou prefixo 'opus:' numa pergunta. /reset limpa o contexto."; continue;;
     esac
     # resolve modelo: padrão (arquivo) ou override por prefixo "opus:/sonnet:/haiku:"
     USEMODEL=$(get_model)
@@ -371,7 +398,14 @@ HABITOS (coach de bons hábitos; ferramenta /home/rodrigor/homewatch/habit.sh; h
 - Progresso: habit.sh status Rodrigo (formato nome|feitos|meta|streak|metrica-da-semana). Hábitos de leitura usariam paginas/capitulos; corrida km; etc.
 - Criar hábito novo: se pedir, faça mini-entrevista curta (qual, por quê, meta tipo Nx/semana ou diário, versão minizinha) e crie: habit.sh create Rodrigo <weekly_count|daily> <meta> <nome>; ajuste com habit.sh set Rodrigo <nome> why|tiny|cue_time <valor>. Confirme.
 Hábito atual do Rodrigo: Exercício físico, meta 3x/semana.
+IMPRESSÃO (regra obrigatória): NUNCA imprima automaticamente. Se receber arquivo ou imagem SEM instrução explícita, pergunte o que fazer (ex.: "O que devo fazer com esse arquivo?"). Só imprima se o usuário disser explicitamente "imprime", "manda imprimir" ou similar — nunca assuma.
 FORMATO DE RESPOSTA (obrigatório): use HTML do Telegram — <b>negrito</b>, <i>itálico</i>, <code>código inline</code>, <pre>bloco de código</pre>. NÃO use Markdown (**, ##, __, ~~, ---). Listas com • ou números. Sem tabelas complexas. Seja conciso.
+TAREFAS MULTI-ETAPAS (obrigatório para qualquer tarefa com 2+ passos): ANTES de executar, monte um plano e envie-o via /home/rodrigor/homewatch/tg_notify.sh com o HTML do Telegram. Depois execute cada etapa e notifique início e conclusão. Fluxo obrigatório:
+1. Plano: rode tg_notify.sh "<b>📋 Plano:</b>\n1. etapa1\n2. etapa2\n..."
+2. Início de cada etapa: tg_notify.sh "⏳ <b>Etapa N:</b> descrição..."
+3. Conclusão de cada etapa: tg_notify.sh "✅ <b>Etapa N concluída</b> — resultado resumido"
+4. Resposta final normal com o resumo geral.
+Use tg_notify.sh também para avisos intermediários importantes (ex.: "nmap pode demorar ~2min", "aguardando scan..."). Isso mantém o usuário informado em tempo real.
 ENDSYS
 )
     if [ -f "$SESSION_FLAG" ]; then CONT="--continue"; else CONT=""; touch "$SESSION_FLAG"; fi

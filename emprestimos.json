@@ -1,0 +1,12 @@
+{
+  "emprestimos": [
+    {"id": 1, "jogo": "GPS",                              "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 2, "jogo": "Mountain Goals",                   "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 3, "jogo": "Fuse",                             "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 4, "jogo": "Sequoia",                          "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 5, "jogo": "Kelp",                             "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 6, "jogo": "Saboteur",                         "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 7, "jogo": "Santo Domingo",                    "para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""},
+    {"id": 8, "jogo": "Terraforming Mars: Expedição Ares","para": "Lab AYTY", "data": "2026-06-10", "devolvido": false, "obs": ""}
+  ]
+}
