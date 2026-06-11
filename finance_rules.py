@@ -13,13 +13,14 @@ def deburr(s):
 def _rule_cat(con, fav, desc, merchant):
     fields = {"favorecido": fav or "", "description": desc or "", "merchant": merchant or ""}
     allt = " ".join(fields.values())
+    best, best_len = None, -1   # vence a regra com o padrão MAIS específico (mais longo)
     for field, pattern, category in con.execute("SELECT field,pattern,category FROM rules ORDER BY id"):
         p = deburr(pattern)
         if not p: continue
         target = allt if (field or "") in ("qualquer", "any", "") else fields.get(field, "")
-        if p in deburr(target):
-            return category
-    return None
+        if p in deburr(target) and len(p) > best_len:
+            best, best_len = category, len(p)
+    return best
 
 def _keyword_cat(con, fav, desc, merchant):
     txt = deburr(" ".join([fav or "", desc or "", merchant or ""]))
