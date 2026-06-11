@@ -19,6 +19,8 @@ if not os.path.exists(SECRET):
     with open(SECRET, "w") as fh: fh.write(secrets.token_hex(32))
     os.chmod(SECRET, 0o600)
 app.secret_key = open(SECRET).read().strip()
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=7))
 
 # ---------- helpers ----------
 def db():
@@ -329,4 +331,5 @@ def conciliacao():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8090, threaded=True)
+    # exposto na rede (LAN) — protegido por login. Porta externa do Pi: 8090.
+    app.run(host="0.0.0.0", port=8090, threaded=True)
