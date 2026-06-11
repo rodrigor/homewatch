@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS budget_alerts(
 CREATE TABLE IF NOT EXISTS rules(
   id INTEGER PRIMARY KEY, field TEXT DEFAULT 'favorecido', pattern TEXT NOT NULL,
   category TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now','localtime')));
+CREATE TABLE IF NOT EXISTS classify_asked(tx_id INTEGER UNIQUE);
 SQL
 }
 
@@ -126,6 +127,60 @@ case "$cmd" in
         COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0) AS spent,
         CASE WHEN b.limit_amount>0 THEN CAST(COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0)*100/b.limit_amount AS INT) ELSE 0 END AS pct
         FROM budgets b WHERE b.month='*' ORDER BY pct DESC;"
+    ;;
+
+  classify-all)  # preenche categoria das transações sem categoria (regras + palavras-chave)
+    echo "classificadas: $(python3 "$DIR/finance_rules.py" classifyall)"
+    ;;
+
+  pending)  # lista transações sem categoria (id|data|valor|favorecido|descrição)
+    lim="${1:-40}"
+    sq -separator '|' "SELECT id,date,printf('%.2f',amount/100.0),COALESCE(favorecido,''),COALESCE(description,'')
+        FROM transactions WHERE category IS NULL OR category='' ORDER BY date DESC LIMIT $lim;"
+    ;;
+
+  setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento
+    id="${1:?uso: setcat <id> categoria}"; cat="${2:?categoria}"
+    sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
+        UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;"
+    echo "OK — #$id → $cat"
+    ;;
+
+  rule)  # rule add <campo> "<padrão>" "<categoria>"  — cria regra e aplica a tudo
+    sub="${1:-}"; shift 2>/dev/null || true
+    case "$sub" in
+      add) field="${1:?campo (favorecido|description|merchant|qualquer)}"; pat="${2:?padrão}"; cat="${3:?categoria}"
+        sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
+            INSERT INTO rules(field,pattern,category) VALUES('$(esc "$field")','$(esc "$pat")','$(esc "$cat")');"
+        python3 "$DIR/finance_rules.py" apply >/dev/null
+        echo "OK — regra: $field contém \"$pat\" → $cat (aplicada)"
+        ;;
+      list|*) sq -separator '|' "SELECT id,field,pattern,category FROM rules ORDER BY id;";;
+    esac
+    ;;
+
+  ask-pending)  # pergunta ao admin no Telegram sobre lançamentos sem categoria ainda não perguntados
+    rows=$(sq -separator '~' "SELECT id, printf('%.2f',amount/100.0), COALESCE(NULLIF(favorecido,''),description,'(sem descrição)')
+        FROM transactions WHERE (category IS NULL OR category='') AND id NOT IN (SELECT tx_id FROM classify_asked)
+        ORDER BY date DESC LIMIT 25;")
+    [ -z "$rows" ] && { echo "nada a perguntar"; exit 0; }
+    msg="🤔 <b>Preciso classificar estes lançamentos do extrato</b> (não reconheci):"
+    ids=""
+    while IFS='~' read -r id val who; do
+      [ -z "$id" ] && continue
+      msg="$msg
+<code>#$id</code>  $val  ·  $who"
+      ids="$ids $id"
+    done <<EOF
+$rows
+EOF
+    first=$(echo $ids | awk '{print $1}')
+    msg="$msg
+
+Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do Herbert são aluguel</i>). Se for um favorecido fixo eu já crio uma regra."
+    "$DIR/tg_notify.sh" "$msg"
+    for id in $ids; do sq "INSERT OR IGNORE INTO classify_asked(tx_id) VALUES($id);"; done
+    echo "perguntei sobre:$ids"
     ;;
 
   groups)  # groups [YYYY-MM] : despesas agrupadas

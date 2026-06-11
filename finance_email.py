@@ -132,6 +132,9 @@ def main():
             log("  → duplicado (external_id), pulado")
         M.store(i, "+FLAGS", "\\Seen")
     con.close(); M.logout()
+    fin = os.path.join(ROOT, "finance.sh")
+    if ofx_summaries:  # classifica TODAS as transações importadas (regras + palavras-chave)
+        subprocess.run([fin, "classify-all"], capture_output=True)
     lines = []
     if added: lines.append("🧾 <b>Novas transações (e-mail) p/ revisar:</b>\n" + "\n".join(added))
     if ofx_summaries: lines.append("🏦 <b>Extratos importados:</b>\n" + "\n".join(ofx_summaries))
@@ -141,6 +144,8 @@ def main():
             subprocess.run([sh, "\n\n".join(lines) + "\n\nStatus pendente/importado — confira no painel de finanças."])
     if added or ofx_summaries:  # gastos novos podem ter cruzado um limite
         subprocess.run([os.path.join(ROOT, "finance_alerts.sh")], capture_output=True)
+    if ofx_summaries:  # pergunta ao Rodrigo o que não foi reconhecido
+        subprocess.run([fin, "ask-pending"], capture_output=True)
     log(f"fim: {len(added)} compra(s) · {len(ofx_summaries)} extrato(s)")
 
 if __name__ == "__main__":

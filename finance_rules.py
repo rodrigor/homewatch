@@ -46,6 +46,17 @@ def apply_rules(con):
     con.commit()
     return n
 
+def classify_all(con):
+    """preenche a categoria das transações SEM categoria (regras + palavras-chave). Não sobrescreve. Retorna nº preenchido."""
+    n = 0
+    for tid, fav, desc, merch in con.execute(
+            "SELECT id,favorecido,description,merchant FROM transactions WHERE category IS NULL OR category=''").fetchall():
+        m = classify(con, fav, desc, merch)
+        if m:
+            con.execute("UPDATE transactions SET category=? WHERE id=?", (m, tid)); n += 1
+    con.commit()
+    return n
+
 if __name__ == "__main__":
     con = sqlite3.connect(DB)
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -54,4 +65,6 @@ if __name__ == "__main__":
         print(classify(con, a[2] if len(a) > 2 else "", a[3] if len(a) > 3 else "", a[4] if len(a) > 4 else "") or "")
     elif cmd == "apply":
         print(apply_rules(con))
+    elif cmd == "classifyall":
+        print(classify_all(con))
     con.close()

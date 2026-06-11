@@ -613,7 +613,11 @@ def conciliacao():
         c.execute("INSERT INTO ofx_imports(filename,matched,unmatched) VALUES(?,?,?)",
                   (f.filename, matched, imported)); c.commit()
         flash(f"OFX “{f.filename}”: {len(txns)} lidas · {matched} conciliadas · {imported} novas · {dup} já existentes")
-        c.close(); return redirect(url_for("conciliacao"))
+        c.close()
+        fin = os.path.join(ROOT, "finance.sh")
+        subprocess.run([fin, "classify-all"], capture_output=True)   # classifica todas
+        subprocess.run([fin, "ask-pending"], capture_output=True)    # pergunta o que não reconheceu
+        return redirect(url_for("conciliacao"))
     last = c.execute("SELECT * FROM ofx_imports ORDER BY id DESC LIMIT 6").fetchall()
     nimp = c.execute("SELECT COUNT(*) FROM transactions WHERE status='importado'").fetchone()[0]
     ncon = c.execute("SELECT COUNT(*) FROM transactions WHERE status='conciliado'").fetchone()[0]
