@@ -80,7 +80,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="{{url_for('dashboard')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
-<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
+<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
@@ -195,28 +195,40 @@ def transacoes():
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if f_conta or f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes)}}" class=muted>limpar</a>{% endif %}
     </form>
-    {% if rows %}<table id=tx><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Status</th><th style=text-align:right>Valor (R$)</th><th></th></tr>
+    <table id=tx><tr><th class=dt>Data</th><th>Descrição</th><th>Favorecido</th><th>Categoria</th><th>Conta</th><th class=st>Status</th><th class=vl style=text-align:right>Valor (R$)</th><th></th></tr>
+    <tr class=newrow>
+      <td><input type=date id=n_date class=dt></td>
+      <td><input id=n_desc placeholder="+ nova transação…"></td>
+      <td><input id=n_fav placeholder="favorecido"></td>
+      <td><select id=n_cat><option value="">—</option>{% for ct in cats %}<option>{{ct['name']}}</option>{% endfor %}</select></td>
+      <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
+      <td><select id=n_status class=st>{% for s in statuses %}<option {{'selected' if s=='confirmado'}}>{{s}}</option>{% endfor %}</select></td>
+      <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
+      <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
     {% for r in rows %}<tr class="st-{{r['status']}}">
-      <td><input type=date value="{{r['date'] or ''}}" onchange="sv({{r['id']}},'date',this)"></td>
-      <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)" style=min-width:160px></td>
+      <td><input type=date class=dt value="{{r['date'] or ''}}" onchange="sv({{r['id']}},'date',this)"></td>
+      <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
+      <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
       <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>
         {% for ct in cats %}<option {{'selected' if r['category']==ct['name']}}>{{ct['name']}}</option>{% endfor %}</select></td>
       <td><select onchange="sv({{r['id']}},'account_id',this)"><option value="">—</option>
         {% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select onchange="sv({{r['id']}},'status',this)">
+      <td><select class=st onchange="sv({{r['id']}},'status',this)">
         {% for s in statuses %}<option {{'selected' if r['status']==s}}>{{s}}</option>{% endfor %}</select></td>
-      <td style=text-align:right><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
-        onchange="sv({{r['id']}},'amount',this)" style="width:92px;text-align:right"></td>
+      <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
+        onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
       <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
-    <tr><td colspan=5 style=text-align:right class=muted>Total filtrado</td>
-      <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr></table>
-    {% else %}<p class=muted>Nada encontrado. <a href="{{url_for('nova')}}">Lançar →</a></p>{% endif %}</div>
-    <style>.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
-    #tx input,#tx select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%}
+    {% if rows %}<tr><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
+      <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}</table>
+    {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}</div>
+    <style>.wrap{max-width:none}#tx{font-size:13px}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
+    .dt{max-width:145px}.st{max-width:125px}#tx td,#tx th{padding:6px 6px}
+    #tx input,#tx select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
     #tx input:hover,#tx select:hover{border-color:var(--ln)}#tx input:focus,#tx select:focus{border-color:var(--acc);background:#0d1117;outline:none}
     #tx .val.neg{color:var(--red)}#tx .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
     button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
-    tr.st-pendente{background:#f0883e0e}tr.st-conciliado td{box-shadow:none}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}</style>
+    button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
+    tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}</style>
     <script>
     function sv(id,field,el){const b='field='+field+'&value='+encodeURIComponent(el.value);
       fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
@@ -225,6 +237,12 @@ def transacoes():
         setTimeout(()=>el.classList.remove('saved'),700);}).catch(()=>el.classList.add('err'));}
     function dl(id){if(!confirm('Excluir esta transação?'))return;
       fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+    function addtx(){const g=i=>document.getElementById(i).value;
+      if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
+      const b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),
+        category:g('n_cat'),account_id:g('n_acc'),status:g('n_status'),valor:g('n_val')}).toString();
+      fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
+      .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
     </script>"""
     return render(inner, mes=mes, rows=rows, accs=accs, cats=cats, statuses=STATUSES,
                   f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
@@ -233,7 +251,7 @@ def transacoes():
 @login_required
 def api_tx(tid):
     field = request.form.get("field"); value = request.form.get("value", "")
-    if field not in {"date", "description", "merchant", "category", "status", "account_id", "amount"}:
+    if field not in {"date", "description", "merchant", "favorecido", "category", "status", "account_id", "amount"}:
         return {"ok": False, "err": "campo inválido"}, 400
     c = db()
     if field == "amount":
@@ -252,6 +270,24 @@ def api_tx(tid):
 @login_required
 def api_tx_del(tid):
     c = db(); c.execute("DELETE FROM transactions WHERE id=?", (tid,)); c.commit(); c.close()
+    return {"ok": True}
+
+@app.route("/api/tx/new", methods=["POST"])
+@login_required
+def api_tx_new():
+    f = request.form
+    cents = parse_cents(f.get("valor", ""))
+    if cents is None or cents == 0:
+        return {"ok": False, "err": "valor inválido (use - para gasto, ex: -45,90)"}, 400
+    acc = f.get("account_id", "")
+    c = db()
+    c.execute("""INSERT INTO transactions(date,amount,description,favorecido,category,account_id,status,source)
+                 VALUES(?,?,?,?,?,?,?,'manual')""",
+              (f.get("date") or datetime.date.today().isoformat(), cents, f.get("description") or None,
+               f.get("favorecido") or None, f.get("category") or None, int(acc) if acc else None,
+               f.get("status") or "confirmado"))
+    c.commit(); c.close()
+    subprocess.run([os.path.join(ROOT, "finance_alerts.sh")], capture_output=True)
     return {"ok": True}
 
 # ---------- lançamento manual ----------
@@ -356,6 +392,95 @@ def api_limite():
     c.commit(); c.close(); return {"ok": True}
 
 
+ACCT_TYPES = ["corrente", "poupança", "credito", "espécie", "vale", "investimento", "conta"]
+
+@app.route("/contas")
+@login_required
+def contas():
+    c = db()
+    rows = c.execute("""SELECT a.*, (SELECT COUNT(*) FROM transactions WHERE account_id=a.id) usos
+                        FROM accounts a ORDER BY a.name""").fetchall()
+    c.close()
+    inner = """<div class=card>
+    <h3 style=margin-top:0>Contas</h3>
+    <p class=muted>Cadastre suas contas (banco, número). Extratos OFX criam/atualizam a conta sozinhos pelo número. Use a primeira linha pra adicionar.</p>
+    <table id=acc><tr><th>Nome</th><th>Banco</th><th>Número</th><th>Tipo</th><th>Cor</th><th>Uso</th><th></th></tr>
+    <tr class=newrow>
+      <td><input id=a_name placeholder="+ nova conta…"></td>
+      <td><input id=a_bank placeholder="banco"></td>
+      <td><input id=a_num placeholder="número"></td>
+      <td><select id=a_type>{% for t in types %}<option>{{t}}</option>{% endfor %}</select></td>
+      <td><input id=a_color type=color value="#2f81f7" style="width:46px;padding:2px"></td>
+      <td></td><td><button class=addb onclick="adda()" title=adicionar>＋</button></td></tr>
+    {% for r in rows %}<tr>
+      <td><input value="{{r['name']}}" onchange="sa({{r['id']}},'name',this)"></td>
+      <td><input value="{{r['bank'] or ''}}" onchange="sa({{r['id']}},'bank',this)"></td>
+      <td><input value="{{r['numero'] or ''}}" onchange="sa({{r['id']}},'numero',this)"></td>
+      <td><select onchange="sa({{r['id']}},'type',this)">{% for t in types %}<option {{'selected' if r['type']==t}}>{{t}}</option>{% endfor %}
+        {% if r['type'] and r['type'] not in types %}<option selected>{{r['type']}}</option>{% endif %}</select></td>
+      <td><input type=color value="{{r['color'] or '#888888'}}" onchange="sa({{r['id']}},'color',this)" style="width:46px;padding:2px"></td>
+      <td class=tag>{{r['usos']}}</td>
+      <td><button class=del onclick="dla({{r['id']}},{{r['usos']}})" title=excluir>✕</button></td></tr>{% endfor %}
+    </table></div>
+    <style>#acc{font-size:13px}#acc td,#acc th{padding:6px 6px}
+    #acc input,#acc select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+    #acc input:hover,#acc select:hover{border-color:var(--ln)}#acc input:focus,#acc select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
+    button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
+    button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
+    tr.newrow{background:#2f81f714}</style>
+    <script>
+    function sa(id,field,el){fetch('/api/account/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'field='+field+'&value='+encodeURIComponent(el.value)}).then(r=>r.json())
+      .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
+    function adda(){const g=i=>document.getElementById(i).value;
+      if(!g('a_name')){alert('Informe o nome da conta.');return;}
+      const b=new URLSearchParams({name:g('a_name'),bank:g('a_bank'),numero:g('a_num'),type:g('a_type'),color:g('a_color')}).toString();
+      fetch('/api/account/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
+      .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
+    function dla(id,usos){if(!confirm(usos>0?('Esta conta tem '+usos+' transações; elas ficarão sem conta. Excluir?'):'Excluir conta?'))return;
+      fetch('/api/account/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+    </script>"""
+    return render(inner, rows=rows, types=ACCT_TYPES)
+
+@app.route("/api/account/new", methods=["POST"])
+@login_required
+def api_account_new():
+    f = request.form; name = (f.get("name") or "").strip()
+    if not name: return {"ok": False, "err": "nome obrigatório"}, 400
+    c = db()
+    try:
+        c.execute("INSERT INTO accounts(name,bank,numero,type,color) VALUES(?,?,?,?,?)",
+                  (name, f.get("bank") or None, f.get("numero") or None, f.get("type") or "conta", f.get("color") or "#888"))
+        c.commit()
+    except sqlite3.IntegrityError:
+        c.close(); return {"ok": False, "err": "já existe conta com esse nome"}, 400
+    c.close(); return {"ok": True}
+
+@app.route("/api/account/<int:aid>", methods=["POST"])
+@login_required
+def api_account(aid):
+    field = request.form.get("field"); value = request.form.get("value", "").strip()
+    if field not in {"name", "bank", "numero", "type", "color"}:
+        return {"ok": False, "err": "campo inválido"}, 400
+    if field == "name" and not value:
+        return {"ok": False, "err": "nome não pode ficar vazio"}, 400
+    c = db()
+    try:
+        c.execute(f"UPDATE accounts SET {field}=? WHERE id=?", (value or None, aid)); c.commit()
+    except sqlite3.IntegrityError:
+        c.close(); return {"ok": False, "err": "nome duplicado"}, 400
+    c.close(); return {"ok": True}
+
+@app.route("/api/account/<int:aid>/delete", methods=["POST"])
+@login_required
+def api_account_del(aid):
+    c = db()
+    c.execute("UPDATE transactions SET account_id=NULL WHERE account_id=?", (aid,))
+    c.execute("DELETE FROM accounts WHERE id=?", (aid,)); c.commit(); c.close()
+    return {"ok": True}
+
+
 @app.route("/grupos")
 @login_required
 def grupos():
@@ -393,8 +518,9 @@ def conciliacao():
         f = request.files.get("ofx")
         if not f or not f.filename:
             flash("Selecione um arquivo OFX."); c.close(); return redirect(url_for("conciliacao"))
-        txns = ofx_parser.parse(ofx_parser.decode_ofx(f.read()))
-        matched, imported, dup = ofx_parser.reconcile(c, txns)
+        raw = ofx_parser.decode_ofx(f.read())
+        txns = ofx_parser.parse(raw)
+        matched, imported, dup = ofx_parser.reconcile(c, txns, ofx_parser.parse_account(raw))
         c.execute("INSERT INTO ofx_imports(filename,matched,unmatched) VALUES(?,?,?)",
                   (f.filename, matched, imported)); c.commit()
         flash(f"OFX “{f.filename}”: {len(txns)} lidas · {matched} conciliadas · {imported} novas · {dup} já existentes")

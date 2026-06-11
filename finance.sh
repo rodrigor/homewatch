@@ -19,7 +19,7 @@ init_db(){
 PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS accounts(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT DEFAULT 'credito',
-  bank TEXT, color TEXT DEFAULT '#888', created_at TEXT DEFAULT (datetime('now','localtime')));
+  bank TEXT, numero TEXT, color TEXT DEFAULT '#888', created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS categories(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, parent TEXT,
   icon TEXT, color TEXT, grupo TEXT, rule_keywords TEXT DEFAULT '[]');
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS transactions(
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL, time TEXT,
   amount INTEGER NOT NULL,                 -- centavos; negativo = despesa, positivo = receita
-  description TEXT, merchant TEXT,
+  description TEXT, merchant TEXT, favorecido TEXT,
   category TEXT, subcategory TEXT,
   account_id INTEGER REFERENCES accounts(id),
   source TEXT DEFAULT 'manual',            -- manual|telegram|email|ofx
@@ -53,8 +53,10 @@ CREATE TABLE IF NOT EXISTS budget_alerts(
 SQL
 }
 
-migrate_cols(){  # adiciona coluna grupo em bancos já existentes
-  sq "PRAGMA table_info(categories);" | grep -q '|grupo|' || sq "ALTER TABLE categories ADD COLUMN grupo TEXT;"
+migrate_cols(){  # adiciona colunas novas em bancos já existentes
+  sq "PRAGMA table_info(categories);"   | grep -q '|grupo|'      || sq "ALTER TABLE categories ADD COLUMN grupo TEXT;"
+  sq "PRAGMA table_info(accounts);"     | grep -q '|numero|'     || sq "ALTER TABLE accounts ADD COLUMN numero TEXT;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|favorecido|' || sq "ALTER TABLE transactions ADD COLUMN favorecido TEXT;"
 }
 
 seed_categories(){

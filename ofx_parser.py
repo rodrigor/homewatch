@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """ofx_parser.py — parser tolerante de OFX (SGML dos bancos BR e OFX 2.x/XML).
-Extrai transações: date (YYYY-MM-DD), cents (INTEGER, com sinal), memo, fitid."""
+Extrai transações (date, cents, description, favorecido, memo, fitid) e os dados da conta
+(BANKACCTFROM), e concilia com o banco local (dedupe por FITID, match por valor+data)."""
 import re
+
+BANK_NAMES = {"260": "Nubank", "1": "Banco do Brasil", "341": "Itaú", "33": "Santander",
+              "104": "Caixa", "237": "Bradesco", "77": "Inter", "212": "Original",
+              "336": "C6", "290": "PagBank", "380": "PicPay", "208": "BTG"}
 
 def decode_ofx(b):
     """decodifica bytes de OFX tentando UTF-8 (Nubank) e caindo p/ latin-1 (bancos antigos)."""
@@ -9,6 +14,15 @@ def decode_ofx(b):
         try: return b.decode(enc)
         except UnicodeDecodeError: pass
     return b.decode("latin-1", "replace")
+
+def _split_memo(memo):
+    """separa descrição e favorecido. Em transferências/Pix o favorecido vem no MEMO:
+    'Transferência Recebida - FULANO DE TAL - •••.123-•• - BCO ... ' -> ('Transferência Recebida','FULANO DE TAL')."""
+    memo = (memo or "").strip()
+    parts = [s.strip() for s in memo.split(" - ")]
+    if re.match(r"(?i)\s*(transfer|pix|ted|doc)", memo) and len(parts) >= 2 and parts[1]:
+        return parts[0], parts[1]
+    return memo, None
 
 def parse(text):
     txns = []
@@ -25,16 +39,43 @@ def parse(text):
             cents = int(round(float(amt.replace(".", "").replace(",", ".") if amt.count(",") == 1 else amt) * 100))
         except Exception:
             continue
+        desc, fav = _split_memo(memo)
         txns.append({"date": f"{dt[0:4]}-{dt[4:6]}-{dt[6:8]}", "cents": cents,
-                     "memo": memo[:120], "fitid": fitid or None})
+                     "memo": memo[:200], "description": desc[:120], "favorecido": fav,
+                     "fitid": fitid or None})
     return txns
 
-def reconcile(con, txns):
-    """Concilia uma lista de transações OFX num conn sqlite aberto.
-    - dedupe por FITID (external_id UNIQUE) -> extratos sobrepostos não duplicam
-    - casa com transação existente (mesmo valor, data ±2 dias) -> status=conciliado
-    - sem par -> insere como source=ofx, status=importado
+def parse_account(text):
+    """dados da conta a partir de <BANKACCTFROM>; None se ausente."""
+    m = re.search(r"<BANKACCTFROM>(.*?)</BANKACCTFROM>", text, re.S | re.I)
+    if not m: return None
+    blk = m.group(1)
+    def g(tag):
+        mm = re.search(r"<" + tag + r">\s*([^<\r\n]+)", blk, re.I)
+        return mm.group(1).strip() if mm else ""
+    acctid = g("ACCTID")
+    if not acctid: return None
+    return {"bankid": g("BANKID"), "acctid": acctid, "accttype": g("ACCTTYPE")}
+
+def ensure_account(con, account):
+    """acha (ou cria) a conta pelo número; retorna o id."""
+    acctid = account["acctid"]
+    row = con.execute("SELECT id FROM accounts WHERE numero=?", (acctid,)).fetchone()
+    if row: return row[0]
+    bankid = (account.get("bankid") or "").lstrip("0") or "0"
+    bank = BANK_NAMES.get(bankid, f"Banco {account.get('bankid','?')}")
+    name = f"{bank} {acctid}"
+    typ = "corrente" if (account.get("accttype") or "").upper() == "CHECKING" else "conta"
+    con.execute("INSERT OR IGNORE INTO accounts(name,type,bank,numero) VALUES(?,?,?,?)", (name, typ, bank, acctid))
+    con.commit()
+    row = con.execute("SELECT id FROM accounts WHERE numero=?", (acctid,)).fetchone()
+    return row[0] if row else None
+
+def reconcile(con, txns, account=None):
+    """Concilia transações OFX. dedupe por FITID; match por valor+data ±2 dias -> conciliado;
+    sem par -> importado. Se vier 'account', cria/usa a conta e preenche account_id.
     Retorna (conciliadas, novas, duplicadas)."""
+    acc_id = ensure_account(con, account) if account and account.get("acctid") else None
     matched = imported = dup = 0
     for t in txns:
         if t["fitid"] and con.execute("SELECT 1 FROM transactions WHERE external_id=?", (t["fitid"],)).fetchone():
@@ -45,15 +86,19 @@ def reconcile(con, txns):
                ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1""",
             (t["cents"], t["date"], t["date"])).fetchone()
         if cand:
-            con.execute("UPDATE transactions SET status='conciliado', external_id=? WHERE id=?", (t["fitid"], cand[0]))
+            con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
+                           account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?) WHERE id=?""",
+                        (t["fitid"], acc_id, t.get("favorecido"), cand[0]))
             matched += 1
         else:
-            con.execute("""INSERT INTO transactions(date,amount,description,source,status,external_id)
-                           VALUES(?,?,?,'ofx','importado',?)""", (t["date"], t["cents"], t["memo"], t["fitid"]))
+            con.execute("""INSERT INTO transactions(date,amount,description,favorecido,account_id,source,status,external_id,notes)
+                           VALUES(?,?,?,?,?,'ofx','importado',?,?)""",
+                        (t["date"], t["cents"], t.get("description"), t.get("favorecido"), acc_id, t["fitid"], t.get("memo")))
             imported += 1
     con.commit()
     return matched, imported, dup
 
 if __name__ == "__main__":
     import sys, json
-    print(json.dumps(parse(open(sys.argv[1], encoding="latin-1", errors="replace").read()), ensure_ascii=False, indent=2))
+    raw = decode_ofx(open(sys.argv[1], "rb").read())
+    print(json.dumps({"account": parse_account(raw), "txns": parse(raw)}, ensure_ascii=False, indent=2))

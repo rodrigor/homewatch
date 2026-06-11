@@ -110,7 +110,7 @@ def main():
         ofx_text, ofx_name = ofx_attachment(msg)
         if ofx_text:
             txns = ofx_parser.parse(ofx_text)
-            m, im, dp = ofx_parser.reconcile(con, txns)
+            m, im, dp = ofx_parser.reconcile(con, txns, ofx_parser.parse_account(ofx_text))
             con.execute("INSERT INTO ofx_imports(filename,matched,unmatched) VALUES(?,?,?)", (ofx_name, m, im)); con.commit()
             log(f"  → OFX {ofx_name}: {len(txns)} lidas · {m} conc · {im} novas · {dp} dup")
             ofx_summaries.append(f"📄 {ofx_name}: {im} nova(s), {m} conciliada(s)" + (f", {dp} já existentes" if dp else ""))
