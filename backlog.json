@@ -108,9 +108,9 @@
       "id": "1781197324",
       "title": "[FINANÇAS F4] Dashboard e orçamento mensal",
       "description": "Página / com: (1) Cards resumo: total gasto no mês, saldo, nº transações, pendentes de revisão. (2) Gráfico pizza por categoria (Chart.js). (3) Barra de progresso por categoria vs orçamento definido. (4) Comparativo mês anterior. Página /orcamento: definir limite mensal por categoria (ex: alimentação R$2.000). Alerta automático via Telegram quando atingir 80% e 100% do limite de uma categoria.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
-      "notes": "ENTREGUE (escopo enxuto a pedido do Rodrigo 2026-06-11): agrupamento de despesas por GRUPO personalizado (categorias->grupo), pagina /grupos editavel, visao por grupo no dashboard com barras + seletor de mes, finance.sh groups. NAO incluido (fora do pedido): orcamento por categoria, alertas 80/100%, comparativo mes anterior."
+      "notes": "ENTREGUE 2026-06-11: dashboard com despesas por grupo (barras)+seletor de mes, LIMITES mensais por categoria (/limites) e ALERTAS no Telegram a 80% e 100% (finance_alerts.sh, sem spam via budget_alerts; timer horario + dispara no watcher de e-mail e no chat). Painel de orcamento no dashboard. Nao incluido: grafico pizza (usei barras) e comparativo mes anterior."
     },
     {
       "id": "1781197325",

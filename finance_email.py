@@ -125,6 +125,8 @@ def main():
         M.store(i, "+FLAGS", "\\Seen")
     con.close(); M.logout()
     notify(added)
+    if added:  # despesas novas podem ter cruzado um limite
+        subprocess.run([os.path.join(ROOT, "finance_alerts.sh")], capture_output=True)
     log(f"fim: {len(added)} nova(s) transação(ões)")
 
 if __name__ == "__main__":

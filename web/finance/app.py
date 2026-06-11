@@ -80,7 +80,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="{{url_for('dashboard')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
-<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
+<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
@@ -127,6 +127,10 @@ def dashboard():
                           WHERE t.amount<0 AND substr(t.date,1,7)=? GROUP BY c.grupo ORDER BY v DESC""", (mes,)).fetchall()
     cats = c.execute("""SELECT COALESCE(category,'—') cat, -SUM(amount) v FROM transactions
                         WHERE amount<0 AND substr(date,1,7)=? GROUP BY category ORDER BY v DESC""", (mes,)).fetchall()
+    orc = c.execute("""SELECT b.category cat, b.limit_amount lim,
+        COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)=?),0) spent
+        FROM budgets b WHERE b.month='*' AND b.limit_amount>0
+        ORDER BY (spent*1.0/b.limit_amount) DESC""", (mes,)).fetchall()
     c.close()
     maxg = max([r["v"] for r in grupos], default=1) or 1
     totg = sum(r["v"] for r in grupos) or 1
@@ -146,13 +150,19 @@ def dashboard():
       <div class=gt><div class=gf style="width:{{(r['v']/maxg*100)|round(1)}}%;background:{{pal[loop.index0 % 9]}}"></div></div>
       <div class=gv>{{r['v']|brl}} <span class=tag>{{(r['v']/totg*100)|round(0)|int}}%</span></div></div>{% endfor %}
     {% else %}<p class=muted>Sem despesas em {{mes}}. <a href="{{url_for('nova')}}">Lançar →</a></p>{% endif %}</div>
+    {% if orc %}<div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Orçamento do mês</h3>
+      <a class=tag href="{{url_for('limites')}}">editar limites →</a></div>
+    {% for r in orc %}{% set p=(r['spent']*100//r['lim']) %}<div class=gbar>
+      <div class=gl>{{r['cat']}}</div>
+      <div class=gt><div class=gf style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
+      <div class=gv>{{r['spent']|brl}}/{{r['lim']|brl}} <span class=tag>{{p}}%</span></div></div>{% endfor %}</div>{% endif %}
     {% if cats %}<div class=card><h3 style=margin-top:0>Detalhe por categoria</h3>
     <table><tr><th>Categoria</th><th style=text-align:right>Gasto</th></tr>
     {% for r in cats %}<tr><td>{{r['cat']}}</td><td style=text-align:right class=neg>{{r['v']|brl}}</td></tr>{% endfor %}</table></div>{% endif %}
-    <style>.gbar{display:grid;grid-template-columns:130px 1fr 170px;align-items:center;gap:10px;margin:7px 0}
+    <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
-    .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:14px}</style>"""
-    return render(inner, mes=mes, desp=desp, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, maxg=maxg, totg=totg)
+    .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}</style>"""
+    return render(inner, mes=mes, desp=desp, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
@@ -298,6 +308,53 @@ def senha():
     <label style=margin-top:10px>Nova senha</label><input name=nova type=password style=width:100%>
     <button style=margin-top:14px>Salvar</button></form></div>"""
     return render(inner)
+
+@app.route("/limites")
+@login_required
+def limites():
+    mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
+    c = db()
+    rows = c.execute("""SELECT cat.name, cat.icon, COALESCE(b.limit_amount,0) lim,
+        COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=cat.name AND amount<0 AND substr(date,1,7)=?),0) spent
+        FROM categories cat LEFT JOIN budgets b ON b.category=cat.name AND b.month='*'
+        WHERE cat.name<>'Receitas' ORDER BY (CASE WHEN b.limit_amount>0 THEN 0 ELSE 1 END), cat.name""", (mes,)).fetchall()
+    c.close()
+    inner = """<div class=card style=max-width:680px>
+    <h3 style=margin-top:0>Limites mensais por categoria</h3>
+    <p class=muted>Defina quanto pretende gastar por mês em cada categoria. Quando o gasto do mês chegar a <b>80%</b> e a <b>100%</b>, você recebe um alerta no Telegram. Deixe em branco pra não ter limite.</p>
+    <table><tr><th>Categoria</th><th style=width:130px>Limite (R$)</th><th>Mês atual</th></tr>
+    {% for r in rows %}<tr>
+      <td>{{r['icon']}} {{r['name']}}</td>
+      <td><input value="{{ r['lim']|reais_plain if r['lim'] else '' }}" placeholder="—" onchange="sl('{{r['name']}}',this)"
+        style="width:110px;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px;text-align:right"></td>
+      <td>{% if r['lim'] %}{% set p=(r['spent']*100//r['lim']) %}
+        <div class=pbar><div class=pfill style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
+        <span class=tag>{{r['spent']|brl}} · {{p}}%</span>
+      {% else %}<span class=muted>{{r['spent']|brl}} (sem limite)</span>{% endif %}</td></tr>{% endfor %}
+    </table></div>
+    <style>.pbar{background:#0d1117;border-radius:5px;height:8px;overflow:hidden;margin-bottom:3px}.pfill{height:100%;border-radius:5px;min-width:2px}</style>
+    <script>function sl(name,el){fetch('/api/limite',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'name='+encodeURIComponent(name)+'&value='+encodeURIComponent(el.value)})
+      .then(r=>r.json()).then(j=>{el.style.borderColor=j.ok?'var(--grn)':'var(--red)';if(j.ok)setTimeout(()=>location.reload(),500);});}</script>"""
+    return render(inner, rows=rows, mes=mes)
+
+@app.route("/api/limite", methods=["POST"])
+@login_required
+def api_limite():
+    name = request.form.get("name", ""); value = request.form.get("value", "").strip()
+    mes = datetime.date.today().strftime("%Y-%m")
+    c = db()
+    if not value:
+        c.execute("DELETE FROM budgets WHERE category=? AND month='*'", (name,))
+        c.execute("DELETE FROM budget_alerts WHERE category=?", (name,))
+    else:
+        cents = parse_cents(value)
+        if cents is None: c.close(); return {"ok": False, "err": "valor inválido"}, 400
+        c.execute("""INSERT INTO budgets(category,month,limit_amount) VALUES(?,'*',?)
+                     ON CONFLICT(category,month) DO UPDATE SET limit_amount=excluded.limit_amount""", (name, abs(cents)))
+        c.execute("DELETE FROM budget_alerts WHERE category=? AND month=?", (name, mes))  # permite re-alertar com novo limite
+    c.commit(); c.close(); return {"ok": True}
+
 
 @app.route("/grupos")
 @login_required

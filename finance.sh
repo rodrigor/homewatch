@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS installments(
 CREATE TABLE IF NOT EXISTS ofx_imports(
   id INTEGER PRIMARY KEY, filename TEXT, imported_at TEXT DEFAULT (datetime('now','localtime')),
   matched INTEGER DEFAULT 0, unmatched INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS budget_alerts(
+  category TEXT, month TEXT, level INTEGER, sent_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(category,month,level));
 SQL
 }
 
@@ -106,6 +109,29 @@ case "$cmd" in
     cat="${1:?uso: group \"categoria\" \"grupo\"}"; grp="${2:?grupo}"
     sq "UPDATE categories SET grupo='$(esc "$grp")' WHERE name='$(esc "$cat")';"
     echo "OK — $cat → grupo $grp"
+    ;;
+
+  limit)  # limit "<categoria>" <reais|->   (limite mensal recorrente; '-' remove)
+    cat="${1:?uso: limit \"categoria\" <valor|->}"; val="${2:?valor ou -}"
+    if [ "$val" = "-" ]; then
+      sq "DELETE FROM budgets WHERE category='$(esc "$cat")' AND month='*';
+          DELETE FROM budget_alerts WHERE category='$(esc "$cat")';"
+      echo "OK — limite removido de $cat"
+    else
+      cents=$(to_cents "$val"); [ "$cents" = "ERR" ] && { echo "valor inválido"; exit 1; }; cents=${cents#-}
+      sq "INSERT INTO budgets(category,month,limit_amount) VALUES('$(esc "$cat")','*',$cents)
+          ON CONFLICT(category,month) DO UPDATE SET limit_amount=excluded.limit_amount;
+          DELETE FROM budget_alerts WHERE category='$(esc "$cat")' AND month='$(date +%Y-%m)';"
+      echo "OK — limite de $cat: $(cents_fmt "$cents")/mês"
+    fi
+    ;;
+
+  limits)  # limits [YYYY-MM] : categoria|limite|gasto|pct
+    mon="${1:-$(date +%Y-%m)}"
+    sq -separator '|' "SELECT b.category, b.limit_amount,
+        COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0) AS spent,
+        CASE WHEN b.limit_amount>0 THEN CAST(COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0)*100/b.limit_amount AS INT) ELSE 0 END AS pct
+        FROM budgets b WHERE b.month='*' ORDER BY pct DESC;"
     ;;
 
   groups)  # groups [YYYY-MM] : despesas agrupadas
