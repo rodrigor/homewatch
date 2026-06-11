@@ -92,7 +92,7 @@
       "id": "1781197322",
       "title": "[FINANÇAS F3] Import OFX e conciliação",
       "description": "Criar finance_ofx.sh + ofx_parser.py: lê arquivo OFX (formato SGML/XML dos bancos BR), extrai transações (DTPOSTED, TRNAMT, MEMO, FITID). Para cada transação OFX, tentar match automático com transações existentes: mesmo valor + data ±2 dias + merchant similar (score). Match confirmado → status=conciliado. Sem match → status=importado (fila de revisão). Interface web /conciliacao: lista lado a lado OFX vs registrado, botão para vincular manualmente ou marcar como novo. Upload de arquivo OFX via form web.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
       "notes": ""
     },
@@ -100,7 +100,7 @@
       "id": "1781197323",
       "title": "[FINANÇAS F3] Listagem web editável e filtros",
       "description": "Página /transacoes com tabela editável inline (mesmo padrão dos dispositivos de rede do homewatch): clicar no campo → edita in-place → salva via API. Colunas: data, descrição, valor, categoria, conta, status (pendente/confirmado/conciliado), notas. Filtros no topo: seletor de mês, dropdown de conta, dropdown de categoria, dropdown de status, campo de busca. Paginação ou scroll infinito. Destaque visual por status (pendente=amarelo, conciliado=verde, divergente=vermelho).",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
       "notes": ""
     },
