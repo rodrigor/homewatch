@@ -31,3 +31,5 @@ __pycache__/
 
 # Logs
 *.log
+backups/
+web/finance/.secret

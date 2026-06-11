@@ -1,0 +1,17 @@
+[Unit]
+Description=PIrrai — Finanças web (login, 127.0.0.1:8090)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch/web/finance
+ExecStart=/usr/bin/python3 /home/rodrigor/homewatch/web/finance/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

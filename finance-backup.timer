@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup diario do finance.db as 03:00
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target
