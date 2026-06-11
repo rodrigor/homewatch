@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS transactions(
   notes TEXT,
   installment_id INTEGER,
   external_id TEXT,                         -- FITID do OFX
+  excepcional INTEGER DEFAULT 0,            -- despesa fora do normal (one-off); separada do recorrente
   created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_external ON transactions(external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
@@ -62,6 +63,7 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(accounts);"     | grep -q '|numero|'     || sq "ALTER TABLE accounts ADD COLUMN numero TEXT;"
   sq "PRAGMA table_info(transactions);" | grep -q '|favorecido|' || sq "ALTER TABLE transactions ADD COLUMN favorecido TEXT;"
   sq "PRAGMA table_info(categories);"   | grep -q '|is_transfer|' || sq "ALTER TABLE categories ADD COLUMN is_transfer INTEGER DEFAULT 0;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|excepcional|' || sq "ALTER TABLE transactions ADD COLUMN excepcional INTEGER DEFAULT 0;"
 }
 # cláusula SQL: exclui categorias marcadas como movimentação (não-gasto/não-receita)
 NOTRANSFER="COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
@@ -148,6 +150,12 @@ case "$cmd" in
     sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🔁');
         UPDATE categories SET is_transfer=$v WHERE name='$(esc "$cat")';"
     echo "OK — $cat: movimentação=$v"
+    ;;
+
+  excepcional)  # excepcional <id> <on|off>  — marca lançamento como despesa fora do normal
+    id="${1:?uso: excepcional <id> on|off}"; st="${2:-on}"; v=1; [ "$st" = "off" ] && v=0
+    sq "UPDATE transactions SET excepcional=$v WHERE id=$id;"
+    echo "OK — #$id excepcional=$v"
     ;;
 
   setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento

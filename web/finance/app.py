@@ -121,16 +121,17 @@ def logout():
 def dashboard():
     mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
     c = db()
-    desp = c.execute(f"SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER}", (mes,)).fetchone()[0]
-    rec  = c.execute(f"SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)=? AND {NOTRANSFER}", (mes,)).fetchone()[0]
+    desp = c.execute(f"SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} AND COALESCE(excepcional,0)=0", (mes,)).fetchone()[0]
+    exc  = c.execute(f"SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} AND COALESCE(excepcional,0)=1", (mes,)).fetchone()[0]
+    rec  = c.execute(f"SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)=? AND {NOTRANSFER} AND COALESCE(excepcional,0)=0", (mes,)).fetchone()[0]
     n    = c.execute("SELECT COUNT(*) FROM transactions WHERE substr(date,1,7)=?", (mes,)).fetchone()[0]
     pend = c.execute("SELECT COUNT(*) FROM transactions WHERE status='pendente'").fetchone()[0]
     grupos = c.execute("""SELECT COALESCE(c.grupo,'(sem grupo)') g, -SUM(t.amount) v
                           FROM transactions t LEFT JOIN categories c ON c.name=t.category
-                          WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(c.is_transfer,0)=0
+                          WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(c.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
                           GROUP BY c.grupo ORDER BY v DESC""", (mes,)).fetchall()
     cats = c.execute(f"""SELECT COALESCE(category,'—') cat, -SUM(amount) v FROM transactions
-                        WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} GROUP BY category ORDER BY v DESC""", (mes,)).fetchall()
+                        WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} AND COALESCE(excepcional,0)=0 GROUP BY category ORDER BY v DESC""", (mes,)).fetchall()
     orc = c.execute("""SELECT b.category cat, b.limit_amount lim,
         COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)=?),0) spent
         FROM budgets b WHERE b.month='*' AND b.limit_amount>0
@@ -142,7 +143,8 @@ def dashboard():
     <h2 style="margin:0;flex:1">Resumo</h2>
     <form><input type=month name=mes value="{{mes}}" onchange=this.form.submit()></form></div>
     <div class=grid>
-    <div class="card kpi"><div class=l>Despesas</div><div class="v neg">{{desp|brl}}</div></div>
+    <div class="card kpi"><div class=l>Despesas (recorrentes)</div><div class="v neg">{{desp|brl}}</div></div>
+    {% if exc %}<div class="card kpi"><div class=l>Excepcionais</div><div class="v" style=color:#d29922>{{exc|brl}}</div><div class=tag>fora do normal</div></div>{% endif %}
     <div class="card kpi"><div class=l>Receitas</div><div class="v pos">{{rec|brl}}</div></div>
     <div class="card kpi"><div class=l>Saldo</div><div class="v">{{(rec-desp)|brl}}</div></div>
     <div class="card kpi"><div class=l>Transações</div><div class=v>{{n}}</div><div class=tag>{{pend}} pendente(s)</div></div></div>
@@ -166,7 +168,7 @@ def dashboard():
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
     .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}</style>"""
-    return render(inner, mes=mes, desp=desp, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg)
+    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
@@ -199,7 +201,7 @@ def transacoes():
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if f_conta or f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes)}}" class=muted>limpar</a>{% endif %}
     </form>
-    <table id=tx><tr><th class=dt>Data</th><th>Descrição</th><th>Favorecido</th><th>Categoria</th><th>Conta</th><th class=st>Status</th><th class=vl style=text-align:right>Valor (R$)</th><th></th></tr>
+    <table id=tx><tr><th class=dt>Data</th><th>Descrição</th><th>Favorecido</th><th>Categoria</th><th>Conta</th><th class=st>Status</th><th class=vl style=text-align:right>Valor (R$)</th><th title="despesa fora do normal" style=text-align:center>❗</th><th></th></tr>
     <tr class=newrow>
       <td><input type=datetime-local id=n_date class=dt></td>
       <td><input id=n_desc placeholder="+ nova transação…"></td>
@@ -208,6 +210,7 @@ def transacoes():
       <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
       <td><select id=n_status class=st>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
+      <td></td>
       <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
     {% for r in rows %}<tr class="st-{{r['status']}}">
       <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
@@ -221,9 +224,10 @@ def transacoes():
         {% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
       <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
         onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
+      <td style=text-align:center><input type=checkbox {{'checked' if r['excepcional']}} onchange="sx({{r['id']}},this)" title="despesa fora do normal"></td>
       <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
     {% if rows %}<tr><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
-      <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}</table>
+      <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td><td></td></tr>{% endif %}</table>
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}</div>
     <style>.wrap{max-width:none}#tx{font-size:13px}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
     .dt{max-width:195px}.st{max-width:140px}#tx td,#tx th{padding:6px 6px}
@@ -241,6 +245,7 @@ def transacoes():
         setTimeout(()=>el.classList.remove('saved'),700);}).catch(()=>el.classList.add('err'));}
     function dl(id){if(!confirm('Excluir esta transação?'))return;
       fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+    function sx(id,el){fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'field=excepcional&value='+(el.checked?1:0)});}
     function addtx(){const g=i=>document.getElementById(i).value;
       if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
       const b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),
@@ -255,13 +260,15 @@ def transacoes():
 @login_required
 def api_tx(tid):
     field = request.form.get("field"); value = request.form.get("value", "")
-    if field not in {"date", "datetime", "description", "merchant", "favorecido", "category", "status", "account_id", "amount"}:
+    if field not in {"date", "datetime", "description", "merchant", "favorecido", "category", "status", "account_id", "amount", "excepcional"}:
         return {"ok": False, "err": "campo inválido"}, 400
     c = db()
     if field == "amount":
         cents = parse_cents(value)
         if cents is None: c.close(); return {"ok": False, "err": "valor inválido"}, 400
         c.execute("UPDATE transactions SET amount=? WHERE id=?", (cents, tid))
+    elif field == "excepcional":
+        c.execute("UPDATE transactions SET excepcional=? WHERE id=?", (1 if value in ("1", "true", "on") else 0, tid))
     elif field == "datetime":
         d, _, t = value.partition("T")
         c.execute("UPDATE transactions SET date=?, time=? WHERE id=?", (d or None, (t[:5] or None), tid))
