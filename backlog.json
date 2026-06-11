@@ -11,10 +11,10 @@
     {
       "id": "1781074438",
       "title": "Integrar vaults do Obsidian",
-      "description": "Acesso aos vaults do Obsidian via PIrrai: buscar notas, criar/editar notas, consultar conhecimento pessoal pelo Telegram. Definir vault path, formato de integração (leitura direta dos .md ou API do Obsidian) e quais operações suportar.",
+      "description": "Sincronizar vault do Obsidian com GitHub (via plugin Obsidian Git) e clonar no Pi. PIrrai faz git pull antes de cada operação. Operações: buscar notas por palavra-chave (grep nos .md), ler nota, criar nota (commit + push de volta). Stack: git + bash + obsidian.sh. Pré-requisito do usuário: instalar plugin Obsidian Git e apontar para repo GitHub privado.",
       "status": "backlog",
       "created": "2026-06-10",
-      "notes": ""
+      "notes": "Abordagem definida: sync via Git (melhor que rclone/Drive API). Vault já sincroniza com Google Drive; usuário deve criar repo GitHub privado e configurar Obsidian Git plugin com auto-push a cada 5-10min."
     },
     {
       "id": "1781074519",
@@ -36,7 +36,7 @@
       "id": "1781074712",
       "title": "Integração com Todoist",
       "description": "Conectar PIrrai à API REST do Todoist via token pessoal (salvo em config.env). Operações via Telegram: listar tarefas/projetos, criar tarefa, completar tarefa, buscar por projeto (ex.: 'o que tenho pendente no Ayty?'). Stack: curl + jq, sem biblioteca externa. Possível integração futura com registro de atividades Ayty/Uaná.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-10",
       "notes": ""
     },
@@ -46,6 +46,94 @@
       "description": "Conectar PIrrai ao Google Calendar via OAuth 2.0 (ou CalDAV como alternativa mais simples). Fluxo OAuth feito uma vez; refresh token salvo em config. Operações: ver eventos do dia/semana ('o que tenho hoje?'), criar evento ('cria reunião sexta às 14h'), lembrete de evento próximo via Telegram. Avaliar OAuth 2.0 vs CalDAV na hora de implementar.",
       "status": "backlog",
       "created": "2026-06-10",
+      "notes": ""
+    },
+    {
+      "id": "1781197317",
+      "title": "[FINANÇAS F1] Banco de dados e estrutura base",
+      "description": "Criar finance.db (SQLite) com tabelas: accounts (id,name,type,bank,color), transactions (id,date,time,amount,description,merchant,category,subcategory,account_id,source,status,notes,installment_id,created_at), categories (id,name,parent,icon,color,rule_keywords), budgets (id,category,month,limit_amount), installments (id,total,amount,n_total,n_current,start_date,description,account_id), ofx_imports (id,filename,imported_at,matched,unmatched). Criar script finance.sh com comandos: add, list, categorize, accounts.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197318",
+      "title": "[FINANÇAS F1] Web app base com login",
+      "description": "Criar web/finance/ em Flask (ou mesmo padrão do homewatch). Rotas: GET / → dashboard, GET /transacoes → listagem, POST /login, GET /logout. Autenticação simples com sessão + senha hasheada em finance_users.json (Rodrigo=admin, Ayla=editor). Interface similar ao painel de dispositivos de rede: tabela inline editável com campos clicáveis. Servido na mesma porta do homewatch (ex: /finance). Protegido por login — sem acesso sem autenticação.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197319",
+      "title": "[FINANÇAS F1] Lançamento manual de transações",
+      "description": "Permitir adicionar transações manualmente: (1) via web — formulário na página /transacoes/nova com campos date, amount, description, category, account, notes; (2) via Telegram — parse de frases como 'gastei R$45 almoço', 'uber R$22', 'mercado R$320 alimentação' → cria transação com status=manual. Edição e exclusão inline na listagem web. Filtros: mês, conta, categoria, status, busca por texto.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197320",
+      "title": "[FINANÇAS F2] Monitoramento de e-mail IMAP",
+      "description": "Criar finance_email.sh que faz poll IMAP em financeiro@mail.rodrigor.com (credenciais em finance.env). A cada 15min (cron), busca e-mails não lidos, identifica remetente e chama parser correspondente. Parsers Python por remetente: amazon.py (extrai pedido, itens, valor, data), mercadolivre.py, ifood.py, uber.py, 99.py, rappi.py. Cada parser retorna JSON {date, amount, description, merchant, category_hint}. Transação criada com status=pendente para revisão. E-mails processados marcados como lidos.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197321",
+      "title": "[FINANÇAS F2] Regras de categorização automática",
+      "description": "Implementar engine de categorização por regras: tabela categories com campo rule_keywords (JSON array). Ao importar transação, verificar merchant e description contra regras (ex: 'ifood','rappi' → alimentação/delivery; 'uber','99' → transporte; 'amazon','mercadolivre' → compras; 'netflix','spotify' → assinaturas). Claude como fallback para categorias ambíguas (chamada leve ao claude -p com contexto mínimo). Regras editáveis na interface web.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197322",
+      "title": "[FINANÇAS F3] Import OFX e conciliação",
+      "description": "Criar finance_ofx.sh + ofx_parser.py: lê arquivo OFX (formato SGML/XML dos bancos BR), extrai transações (DTPOSTED, TRNAMT, MEMO, FITID). Para cada transação OFX, tentar match automático com transações existentes: mesmo valor + data ±2 dias + merchant similar (score). Match confirmado → status=conciliado. Sem match → status=importado (fila de revisão). Interface web /conciliacao: lista lado a lado OFX vs registrado, botão para vincular manualmente ou marcar como novo. Upload de arquivo OFX via form web.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197323",
+      "title": "[FINANÇAS F3] Listagem web editável e filtros",
+      "description": "Página /transacoes com tabela editável inline (mesmo padrão dos dispositivos de rede do homewatch): clicar no campo → edita in-place → salva via API. Colunas: data, descrição, valor, categoria, conta, status (pendente/confirmado/conciliado), notas. Filtros no topo: seletor de mês, dropdown de conta, dropdown de categoria, dropdown de status, campo de busca. Paginação ou scroll infinito. Destaque visual por status (pendente=amarelo, conciliado=verde, divergente=vermelho).",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197324",
+      "title": "[FINANÇAS F4] Dashboard e orçamento mensal",
+      "description": "Página / com: (1) Cards resumo: total gasto no mês, saldo, nº transações, pendentes de revisão. (2) Gráfico pizza por categoria (Chart.js). (3) Barra de progresso por categoria vs orçamento definido. (4) Comparativo mês anterior. Página /orcamento: definir limite mensal por categoria (ex: alimentação R$2.000). Alerta automático via Telegram quando atingir 80% e 100% do limite de uma categoria.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197325",
+      "title": "[FINANÇAS F4] Múltiplas contas",
+      "description": "Suporte a N contas cadastráveis: tipo (crédito/débito/espécie/vale), banco/bandeira, cor para identificação visual. Visão por conta ou consolidada. Saldo calculado a partir das transações. Página /contas: listar, adicionar, editar. Cada transação vinculada a uma conta. Transferências entre contas (não contabilizam como gasto). Relatório por conta no mês.",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197326",
+      "title": "[FINANÇAS F5] Parcelamentos",
+      "description": "Ao lançar compra parcelada: informar valor total, nº parcelas, conta, data da primeira parcela. Sistema cria N transações futuras automaticamente (status=agendado). Página /parcelamentos: lista de compras parceladas em aberto com progresso (parcela 3 de 12). Widget no dashboard: 'compromissos futuros' — soma das parcelas dos próximos 3 meses por conta. Edição/cancelamento de parcelamento (cancela parcelas futuras).",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781197327",
+      "title": "[FINANÇAS F5] Relatório mensal automático",
+      "description": "Cron no dia 1 de cada mês: gerar relatório do mês anterior em HTML e enviar para rodrigor@rodrigor.com (e opcionalmente Ayla). Conteúdo: total gasto, gasto por categoria (tabela + % do orçamento), top 10 transações, comparativo com mês anterior, saldo por conta, transações não conciliadas pendentes. Também acessível via web em /relatorios. Formato PDF opcional (wkhtmltopdf ou weasyprint).",
+      "status": "backlog",
+      "created": "2026-06-11",
       "notes": ""
     }
   ]

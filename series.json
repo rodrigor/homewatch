@@ -1,0 +1,125 @@
+{
+  "series": [
+    {
+      "id": 1,
+      "name": "Landman",
+      "status": "assistindo",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 2,
+      "name": "Stick",
+      "status": "assistindo",
+      "platform": "Apple TV+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "S01E10",
+      "notify_new": true,
+      "tvmaze_id": 82227
+    },
+    {
+      "id": 3,
+      "name": "House of the Dragon",
+      "status": "assistindo",
+      "platform": "Max",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 4,
+      "name": "Yellowstone",
+      "status": "concluída",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 5,
+      "name": "Breaking Bad",
+      "status": "concluída",
+      "platform": "Netflix",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 6,
+      "name": "1923",
+      "status": "concluída",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 7,
+      "name": "Game of Thrones",
+      "status": "concluída",
+      "platform": "Max",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 8,
+      "name": "Rancho Dutton",
+      "status": "assistindo",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "S01E05",
+      "notify_new": true,
+      "tvmaze_id": 84539
+    },
+    {
+      "id": 9,
+      "name": "1883",
+      "status": "concluída",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 10,
+      "name": "Marshals",
+      "status": "assistindo",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    },
+    {
+      "id": 11,
+      "name": "6666",
+      "status": "quero ver",
+      "platform": "Paramount+",
+      "notes": "",
+      "added": "2026-06-10",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 0
+    }
+  ]
+}
