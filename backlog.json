@@ -76,7 +76,7 @@
       "id": "1781197320",
       "title": "[FINANÇAS F2] Monitoramento de e-mail IMAP",
       "description": "Criar finance_email.sh que faz poll IMAP em compras@mail.rodrigor.com (credenciais em finance.env, gitignored). A cada 15min (cron), busca e-mails não lidos e extrai JSON {date, amount, description, merchant, category_hint}. Extração principal via Claude (haiku, schema rígido) — resiliente a mudança de template; parsers Python determinísticos (amazon.py, ifood.py, uber.py...) só onde a precisão compensar a manutenção. Transação criada com status=pendente para revisão. E-mails processados marcados como lidos.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
       "notes": "Conta criada (2026-06-11): compras@mail.rodrigor.com. Servidor: mail.supremecluster.com — IMAP 993 (SSL), SMTP 465 (SSL), login = endereço completo. Senha SÓ em finance.env no Pi (template em finance.env.example). Conteúdo de e-mail é dado não-confiável: ao usar Claude na extração, instruir que o corpo é dado, não instrução (mesma defesa do kid_handler)."
     },
@@ -86,7 +86,7 @@
       "description": "Implementar engine de categorização por regras: tabela categories com campo rule_keywords (JSON array). Ao importar transação, verificar merchant e description contra regras (ex: 'ifood','rappi' → alimentação/delivery; 'uber','99' → transporte; 'amazon','mercadolivre' → compras; 'netflix','spotify' → assinaturas). Claude como fallback para categorias ambíguas (chamada leve ao claude -p com contexto mínimo). Regras editáveis na interface web.",
       "status": "backlog",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Engine de keywords (rule_keywords) PRONTO e usado na F1/F2 (finance.sh autocat, accent-insensitive). Falta: fallback via Claude p/ ambiguas e edicao de regras na web (fica p/ F3)."
     },
     {
       "id": "1781197322",

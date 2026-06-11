@@ -1,0 +1,10 @@
+[Unit]
+Description=Checa e-mails de compra a cada 15 min
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

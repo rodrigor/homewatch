@@ -1,0 +1,12 @@
+[Unit]
+Description=PIrrai — extrai transações de e-mails de compra (IMAP + Claude)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/usr/bin/python3 /home/rodrigor/homewatch/finance_email.py
