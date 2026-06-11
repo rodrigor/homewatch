@@ -393,23 +393,8 @@ def conciliacao():
         f = request.files.get("ofx")
         if not f or not f.filename:
             flash("Selecione um arquivo OFX."); c.close(); return redirect(url_for("conciliacao"))
-        txns = ofx_parser.parse(f.read().decode("latin-1", "replace"))
-        matched = imported = dup = 0
-        for t in txns:
-            if t["fitid"] and c.execute("SELECT 1 FROM transactions WHERE external_id=?", (t["fitid"],)).fetchone():
-                dup += 1; continue
-            cand = c.execute(
-                """SELECT id FROM transactions WHERE amount=? AND source<>'ofx' AND external_id IS NULL
-                   AND ABS(julianday(date)-julianday(?))<=2
-                   ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1""",
-                (t["cents"], t["date"], t["date"])).fetchone()
-            if cand:
-                c.execute("UPDATE transactions SET status='conciliado', external_id=? WHERE id=?",
-                          (t["fitid"], cand["id"])); matched += 1
-            else:
-                c.execute("""INSERT INTO transactions(date,amount,description,source,status,external_id)
-                             VALUES(?,?,?,'ofx','importado',?)""",
-                          (t["date"], t["cents"], t["memo"], t["fitid"])); imported += 1
+        txns = ofx_parser.parse(ofx_parser.decode_ofx(f.read()))
+        matched, imported, dup = ofx_parser.reconcile(c, txns)
         c.execute("INSERT INTO ofx_imports(filename,matched,unmatched) VALUES(?,?,?)",
                   (f.filename, matched, imported)); c.commit()
         flash(f"OFX “{f.filename}”: {len(txns)} lidas · {matched} conciliadas · {imported} novas · {dup} já existentes")
