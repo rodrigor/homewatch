@@ -6,7 +6,7 @@ import os, re, json, ssl, imaplib, sqlite3, subprocess, shutil, email
 from email.header import decode_header, make_header
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-import ofx_parser
+import ofx_parser, finance_rules
 DB = os.path.join(ROOT, "finance.db")
 LOG = os.path.join(ROOT, "state", "finance_email.log")
 os.makedirs(os.path.join(ROOT, "state"), exist_ok=True)
@@ -80,13 +80,6 @@ def extract(raw):
     try: return json.loads(m.group(0))
     except Exception as e: log(f"  JSON inválido: {e}"); return None
 
-def autocat(text):
-    try:
-        r = subprocess.run([os.path.join(ROOT, "finance.sh"), "autocat", text],
-                           capture_output=True, text=True, timeout=20)
-        return r.stdout.strip() or None
-    except Exception: return None
-
 def to_cents(amount):
     try: return int(round(float(amount) * 100))
     except Exception: return None
@@ -124,7 +117,7 @@ def main():
         if not cents:
             M.store(i, "+FLAGS", "\\Seen"); log("  → sem valor, ignorado"); continue
         merchant = (d.get("merchant") or "")[:80]; desc = (d.get("description") or subj)[:120]
-        cat = autocat(f"{merchant} {desc}")
+        cat = finance_rules.classify(con, None, desc, merchant)
         notes = f"e-mail: {subj[:80]}" + (f" · hint:{d.get('category_hint')}" if d.get("category_hint") else "")
         cur = con.execute(
             """INSERT OR IGNORE INTO transactions(date,amount,description,merchant,category,source,status,external_id,notes)

@@ -75,6 +75,7 @@ def reconcile(con, txns, account=None):
     """Concilia transações OFX. dedupe por FITID; match por valor+data ±2 dias -> conciliado;
     sem par -> importado. Se vier 'account', cria/usa a conta e preenche account_id.
     Retorna (conciliadas, novas, duplicadas)."""
+    import finance_rules
     acc_id = ensure_account(con, account) if account and account.get("acctid") else None
     matched = imported = dup = 0
     for t in txns:
@@ -91,9 +92,10 @@ def reconcile(con, txns, account=None):
                         (t["fitid"], acc_id, t.get("favorecido"), cand[0]))
             matched += 1
         else:
-            con.execute("""INSERT INTO transactions(date,amount,description,favorecido,account_id,source,status,external_id,notes)
-                           VALUES(?,?,?,?,?,'ofx','importado',?,?)""",
-                        (t["date"], t["cents"], t.get("description"), t.get("favorecido"), acc_id, t["fitid"], t.get("memo")))
+            cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None)
+            con.execute("""INSERT INTO transactions(date,amount,description,favorecido,category,account_id,source,status,external_id,notes)
+                           VALUES(?,?,?,?,?,?,'ofx','importado',?,?)""",
+                        (t["date"], t["cents"], t.get("description"), t.get("favorecido"), cat, acc_id, t["fitid"], t.get("memo")))
             imported += 1
     con.commit()
     return matched, imported, dup

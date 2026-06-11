@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS ofx_imports(
 CREATE TABLE IF NOT EXISTS budget_alerts(
   category TEXT, month TEXT, level INTEGER, sent_at TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category,month,level));
+CREATE TABLE IF NOT EXISTS rules(
+  id INTEGER PRIMARY KEY, field TEXT DEFAULT 'favorecido', pattern TEXT NOT NULL,
+  category TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now','localtime')));
 SQL
 }
 
@@ -86,19 +89,8 @@ CATS
 # escapa string p/ SQL
 esc(){ printf '%s' "$1" | sed "s/'/''/g"; }
 
-# autocat_match "texto" -> categoria cujo rule_keywords casa (substring, case-insensitive); vazio se nenhuma
-deburr(){ printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null | tr '[:upper:]' '[:lower:]'; }
-autocat_match(){
-  local txt; txt=$(deburr "$1")
-  [ -z "$txt" ] && return
-  sq -separator $'\t' "SELECT name,rule_keywords FROM categories WHERE rule_keywords<>'[]';" | \
-  while IFS=$'\t' read -r name kws; do
-    while IFS= read -r kw; do
-      kw=$(deburr "$kw")
-      [ -n "$kw" ] && case "$txt" in *"$kw"*) echo "$name"; return;; esac
-    done < <(printf '%s' "$kws" | jq -r '.[]')
-  done | head -1
-}
+# autocat_match "texto" -> categoria (regras + palavras-chave) via motor Python; vazio se nenhuma
+autocat_match(){ python3 "$DIR/finance_rules.py" classify "" "${1:-}" "" 2>/dev/null; }
 
 cmd="${1:-help}"; shift 2>/dev/null || true
 case "$cmd" in

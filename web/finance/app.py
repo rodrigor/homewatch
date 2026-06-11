@@ -8,7 +8,7 @@ from werkzeug.security import check_password_hash
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # .../homewatch
 sys.path.insert(0, ROOT)
-import ofx_parser
+import ofx_parser, finance_rules
 DB = os.path.join(ROOT, "finance.db")
 USERS = os.path.join(ROOT, "finance_users.json")
 FINANCE_SH = os.path.join(ROOT, "finance.sh")
@@ -80,7 +80,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="{{url_for('dashboard')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
-<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
+<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
@@ -281,10 +281,11 @@ def api_tx_new():
         return {"ok": False, "err": "valor inválido (use - para gasto, ex: -45,90)"}, 400
     acc = f.get("account_id", "")
     c = db()
+    cat = f.get("category") or finance_rules.classify(c, f.get("favorecido"), f.get("description"), None)
     c.execute("""INSERT INTO transactions(date,amount,description,favorecido,category,account_id,status,source)
                  VALUES(?,?,?,?,?,?,?,'manual')""",
               (f.get("date") or datetime.date.today().isoformat(), cents, f.get("description") or None,
-               f.get("favorecido") or None, f.get("category") or None, int(acc) if acc else None,
+               f.get("favorecido") or None, cat, int(acc) if acc else None,
                f.get("status") or "confirmado"))
     c.commit(); c.close()
     subprocess.run([os.path.join(ROOT, "finance_alerts.sh")], capture_output=True)
@@ -344,6 +345,94 @@ def senha():
     <label style=margin-top:10px>Nova senha</label><input name=nova type=password style=width:100%>
     <button style=margin-top:14px>Salvar</button></form></div>"""
     return render(inner)
+
+RULE_FIELDS = [("favorecido", "Favorecido"), ("description", "Descrição"),
+               ("merchant", "Estabelecimento"), ("qualquer", "Qualquer campo")]
+
+def ensure_category(c, name):
+    if name and not c.execute("SELECT 1 FROM categories WHERE name=?", (name,)).fetchone():
+        c.execute("INSERT INTO categories(name,icon) VALUES(?, '🏷️')", (name,))
+
+@app.route("/regras")
+@login_required
+def regras():
+    c = db()
+    rows = c.execute("SELECT * FROM rules ORDER BY id").fetchall()
+    cats = c.execute("SELECT name FROM categories ORDER BY name").fetchall()
+    c.close()
+    inner = """<div class=card>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <h3 style="margin:0;flex:1">Regras de classificação</h3>
+      <form method=post action="{{url_for('regras_aplicar')}}"><button class=btn>Aplicar às transações</button></form></div>
+    <p class=muted>Quando o campo escolhido <b>contém</b> o texto, a transação recebe a categoria. Ex.: <i>Favorecido</i> contém <i>Joane</i> → <i>Doméstica</i>. As regras valem para lançamentos novos e extratos importados; o botão acima reaplica nas transações já existentes.</p>
+    <datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
+    <table id=rl><tr><th>Quando o campo</th><th>contém</th><th>→ categoria</th><th></th></tr>
+    <tr class=newrow>
+      <td><select id=r_field>{% for v,lbl in fields %}<option value="{{v}}">{{lbl}}</option>{% endfor %}</select></td>
+      <td><input id=r_pat placeholder="ex: Joane"></td>
+      <td><input id=r_cat list=cats placeholder="ex: Doméstica"></td>
+      <td><button class=addb onclick="addr()" title=adicionar>＋</button></td></tr>
+    {% for r in rows %}<tr>
+      <td><select onchange="sr({{r['id']}},'field',this)">{% for v,lbl in fields %}<option value="{{v}}" {{'selected' if r['field']==v}}>{{lbl}}</option>{% endfor %}</select></td>
+      <td><input value="{{r['pattern']}}" onchange="sr({{r['id']}},'pattern',this)"></td>
+      <td><input list=cats value="{{r['category']}}" onchange="sr({{r['id']}},'category',this)"></td>
+      <td><button class=del onclick="dlr({{r['id']}})" title=excluir>✕</button></td></tr>{% endfor %}
+    </table>{% if not rows %}<p class=muted style=margin-top:10px>Nenhuma regra ainda. Use a primeira linha.</p>{% endif %}</div>
+    <style>#rl{font-size:13px}#rl td,#rl th{padding:6px 6px}#rl input,#rl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+    #rl input:hover,#rl select:hover{border-color:var(--ln)}#rl input:focus,#rl select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
+    button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
+    button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
+    tr.newrow{background:#2f81f714}</style>
+    <script>
+    function sr(id,field,el){fetch('/api/rule/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'field='+field+'&value='+encodeURIComponent(el.value)}).then(r=>r.json())
+      .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
+    function addr(){const g=i=>document.getElementById(i).value;
+      if(!g('r_pat')||!g('r_cat')){alert('Preencha o texto e a categoria.');return;}
+      const b=new URLSearchParams({field:g('r_field'),pattern:g('r_pat'),category:g('r_cat')}).toString();
+      fetch('/api/rule/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
+      .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
+    function dlr(id){if(!confirm('Excluir regra?'))return;fetch('/api/rule/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+    </script>"""
+    return render(inner, rows=rows, cats=cats, fields=RULE_FIELDS)
+
+@app.route("/api/rule/new", methods=["POST"])
+@login_required
+def api_rule_new():
+    f = request.form
+    field = f.get("field", "favorecido"); pattern = (f.get("pattern") or "").strip(); category = (f.get("category") or "").strip()
+    if not pattern or not category: return {"ok": False, "err": "preencha texto e categoria"}, 400
+    if field not in {"favorecido", "description", "merchant", "qualquer"}: field = "favorecido"
+    c = db()
+    ensure_category(c, category)
+    c.execute("INSERT INTO rules(field,pattern,category) VALUES(?,?,?)", (field, pattern, category))
+    c.commit(); c.close(); return {"ok": True}
+
+@app.route("/api/rule/<int:rid>", methods=["POST"])
+@login_required
+def api_rule(rid):
+    field = request.form.get("field"); value = request.form.get("value", "").strip()
+    if field not in {"field", "pattern", "category"}: return {"ok": False, "err": "campo inválido"}, 400
+    if field in ("pattern", "category") and not value: return {"ok": False, "err": "não pode ficar vazio"}, 400
+    c = db()
+    if field == "category": ensure_category(c, value)
+    c.execute(f"UPDATE rules SET {field}=? WHERE id=?", (value, rid)); c.commit(); c.close()
+    return {"ok": True}
+
+@app.route("/api/rule/<int:rid>/delete", methods=["POST"])
+@login_required
+def api_rule_del(rid):
+    c = db(); c.execute("DELETE FROM rules WHERE id=?", (rid,)); c.commit(); c.close()
+    return {"ok": True}
+
+@app.route("/regras/aplicar", methods=["POST"])
+@login_required
+def regras_aplicar():
+    c = db(); n = finance_rules.apply_rules(c); c.close()
+    flash(f"Regras aplicadas: {n} transação(ões) reclassificada(s).")
+    return redirect(url_for("regras"))
+
 
 @app.route("/limites")
 @login_required
