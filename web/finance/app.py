@@ -46,6 +46,7 @@ def parse_cents(s):  # "-67,90" / "R$ 1.234,56" / "45.90" -> centavos (preserva 
     return -c if neg else c
 
 STATUSES = ["pendente", "confirmado", "conciliado", "importado", "agendado"]
+STATUS_ICONS = {"pendente": "⏳", "confirmado": "✅", "conciliado": "🔗", "importado": "📥", "agendado": "📅"}
 # movimentações (categorias is_transfer=1) não contam como gasto/receita
 NOTRANSFER = "COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
 
@@ -200,16 +201,16 @@ def transacoes():
     </form>
     <table id=tx><tr><th class=dt>Data</th><th>Descrição</th><th>Favorecido</th><th>Categoria</th><th>Conta</th><th class=st>Status</th><th class=vl style=text-align:right>Valor (R$)</th><th></th></tr>
     <tr class=newrow>
-      <td><input type=date id=n_date class=dt></td>
+      <td><input type=datetime-local id=n_date class=dt></td>
       <td><input id=n_desc placeholder="+ nova transação…"></td>
       <td><input id=n_fav placeholder="favorecido"></td>
       <td><select id=n_cat><option value="">—</option>{% for ct in cats %}<option>{{ct['name']}}</option>{% endfor %}</select></td>
       <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select id=n_status class=st>{% for s in statuses %}<option {{'selected' if s=='confirmado'}}>{{s}}</option>{% endfor %}</select></td>
+      <td><select id=n_status class=st>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
       <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
     {% for r in rows %}<tr class="st-{{r['status']}}">
-      <td><input type=date class=dt value="{{r['date'] or ''}}" onchange="sv({{r['id']}},'date',this)"></td>
+      <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
       <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
       <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
       <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>
@@ -217,7 +218,7 @@ def transacoes():
       <td><select onchange="sv({{r['id']}},'account_id',this)"><option value="">—</option>
         {% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
       <td><select class=st onchange="sv({{r['id']}},'status',this)">
-        {% for s in statuses %}<option {{'selected' if r['status']==s}}>{{s}}</option>{% endfor %}</select></td>
+        {% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
       <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
         onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
       <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
@@ -225,7 +226,7 @@ def transacoes():
       <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}</table>
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}</div>
     <style>.wrap{max-width:none}#tx{font-size:13px}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
-    .dt{max-width:145px}.st{max-width:125px}#tx td,#tx th{padding:6px 6px}
+    .dt{max-width:195px}.st{max-width:140px}#tx td,#tx th{padding:6px 6px}
     #tx input,#tx select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
     #tx input:hover,#tx select:hover{border-color:var(--ln)}#tx input:focus,#tx select:focus{border-color:var(--acc);background:#0d1117;outline:none}
     #tx .val.neg{color:var(--red)}#tx .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
@@ -247,20 +248,23 @@ def transacoes():
       fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
       .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
     </script>"""
-    return render(inner, mes=mes, rows=rows, accs=accs, cats=cats, statuses=STATUSES,
+    return render(inner, mes=mes, rows=rows, accs=accs, cats=cats, statuses=STATUSES, icons=STATUS_ICONS,
                   f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
 
 @app.route("/api/tx/<int:tid>", methods=["POST"])
 @login_required
 def api_tx(tid):
     field = request.form.get("field"); value = request.form.get("value", "")
-    if field not in {"date", "description", "merchant", "favorecido", "category", "status", "account_id", "amount"}:
+    if field not in {"date", "datetime", "description", "merchant", "favorecido", "category", "status", "account_id", "amount"}:
         return {"ok": False, "err": "campo inválido"}, 400
     c = db()
     if field == "amount":
         cents = parse_cents(value)
         if cents is None: c.close(); return {"ok": False, "err": "valor inválido"}, 400
         c.execute("UPDATE transactions SET amount=? WHERE id=?", (cents, tid))
+    elif field == "datetime":
+        d, _, t = value.partition("T")
+        c.execute("UPDATE transactions SET date=?, time=? WHERE id=?", (d or None, (t[:5] or None), tid))
     elif field == "account_id":
         c.execute("UPDATE transactions SET account_id=? WHERE id=?", (int(value) if value else None, tid))
     elif field == "status" and value not in STATUSES:
@@ -283,11 +287,13 @@ def api_tx_new():
     if cents is None or cents == 0:
         return {"ok": False, "err": "valor inválido (use - para gasto, ex: -45,90)"}, 400
     acc = f.get("account_id", "")
+    dt = f.get("date") or ""
+    d, _, t = dt.partition("T")
     c = db()
     cat = f.get("category") or finance_rules.classify(c, f.get("favorecido"), f.get("description"), None)
-    c.execute("""INSERT INTO transactions(date,amount,description,favorecido,category,account_id,status,source)
-                 VALUES(?,?,?,?,?,?,?,'manual')""",
-              (f.get("date") or datetime.date.today().isoformat(), cents, f.get("description") or None,
+    c.execute("""INSERT INTO transactions(date,time,amount,description,favorecido,category,account_id,status,source)
+                 VALUES(?,?,?,?,?,?,?,?,'manual')""",
+              (d or datetime.date.today().isoformat(), (t[:5] or None), cents, f.get("description") or None,
                f.get("favorecido") or None, cat, int(acc) if acc else None,
                f.get("status") or "confirmado"))
     c.commit(); c.close()

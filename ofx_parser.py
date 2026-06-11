@@ -30,7 +30,8 @@ def parse(text):
         def g(tag):
             m = re.search(r"<" + tag + r">\s*([^<\r\n]+)", blk, re.I)
             return m.group(1).strip() if m else ""
-        dt = re.sub(r"\D", "", g("DTPOSTED"))[:8]          # YYYYMMDD (ignora hora/fuso)
+        raw = re.sub(r"\D", "", g("DTPOSTED"))             # YYYYMMDDHHMMSS (fuso ignorado)
+        dt = raw[:8]; tm = raw[8:14]
         amt = g("TRNAMT"); fitid = g("FITID")
         memo = g("MEMO") or g("NAME")
         if not amt or len(dt) < 8:
@@ -40,7 +41,8 @@ def parse(text):
         except Exception:
             continue
         desc, fav = _split_memo(memo)
-        txns.append({"date": f"{dt[0:4]}-{dt[4:6]}-{dt[6:8]}", "cents": cents,
+        txns.append({"date": f"{dt[0:4]}-{dt[4:6]}-{dt[6:8]}",
+                     "time": (f"{tm[0:2]}:{tm[2:4]}" if len(tm) >= 4 else None), "cents": cents,
                      "memo": memo[:200], "description": desc[:120], "favorecido": fav,
                      "fitid": fitid or None})
     return txns
@@ -101,9 +103,9 @@ def reconcile(con, txns, account=None):
             matched += 1
         else:
             cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None)
-            con.execute("""INSERT INTO transactions(date,amount,description,favorecido,category,account_id,source,status,external_id,notes)
-                           VALUES(?,?,?,?,?,?,'ofx','importado',?,?)""",
-                        (t["date"], t["cents"], t.get("description"), t.get("favorecido"), cat, acc_id, t["fitid"], t.get("memo")))
+            con.execute("""INSERT INTO transactions(date,time,amount,description,favorecido,category,account_id,source,status,external_id,notes)
+                           VALUES(?,?,?,?,?,?,?,'ofx','importado',?,?)""",
+                        (t["date"], t.get("time"), t["cents"], t.get("description"), t.get("favorecido"), cat, acc_id, t["fitid"], t.get("memo")))
             imported += 1
     con.commit()
     return matched, imported, dup
