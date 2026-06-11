@@ -46,8 +46,11 @@ def parse(text):
     return txns
 
 def parse_account(text):
-    """dados da conta a partir de <BANKACCTFROM>; None se ausente."""
+    """dados da conta a partir de <BANKACCTFROM> (conta) ou <CCACCTFROM> (cartão de crédito); None se ausente."""
+    cc = False
     m = re.search(r"<BANKACCTFROM>(.*?)</BANKACCTFROM>", text, re.S | re.I)
+    if not m:
+        m = re.search(r"<CCACCTFROM>(.*?)</CCACCTFROM>", text, re.S | re.I); cc = True
     if not m: return None
     blk = m.group(1)
     def g(tag):
@@ -55,18 +58,23 @@ def parse_account(text):
         return mm.group(1).strip() if mm else ""
     acctid = g("ACCTID")
     if not acctid: return None
-    return {"bankid": g("BANKID"), "acctid": acctid, "accttype": g("ACCTTYPE")}
+    return {"bankid": g("BANKID"), "acctid": acctid,
+            "accttype": ("CREDITCARD" if cc else g("ACCTTYPE")), "is_cc": cc}
 
 def ensure_account(con, account):
-    """acha (ou cria) a conta pelo número; retorna o id."""
+    """acha (ou cria) a conta pelo número; retorna o id. Cartão de crédito vira conta tipo 'cartão de crédito'."""
     acctid = account["acctid"]
     row = con.execute("SELECT id FROM accounts WHERE numero=?", (acctid,)).fetchone()
     if row: return row[0]
-    bankid = (account.get("bankid") or "").lstrip("0") or "0"
-    bank = BANK_NAMES.get(bankid, f"Banco {account.get('bankid','?')}")
-    name = f"{bank} {acctid}"
-    typ = "corrente" if (account.get("accttype") or "").upper() == "CHECKING" else "conta"
-    con.execute("INSERT OR IGNORE INTO accounts(name,type,bank,numero) VALUES(?,?,?,?)", (name, typ, bank, acctid))
+    bankid = (account.get("bankid") or "").lstrip("0")
+    bank = BANK_NAMES.get(bankid, f"Banco {account.get('bankid')}" if account.get("bankid") else "")
+    if account.get("is_cc"):
+        typ = "cartão de crédito"
+        name = ("Cartão " + (bank + " " if bank else "") + acctid).strip()
+    else:
+        typ = "corrente" if (account.get("accttype") or "").upper() == "CHECKING" else "conta"
+        name = f"{bank} {acctid}".strip()
+    con.execute("INSERT OR IGNORE INTO accounts(name,type,bank,numero) VALUES(?,?,?,?)", (name, typ, bank or None, acctid))
     con.commit()
     row = con.execute("SELECT id FROM accounts WHERE numero=?", (acctid,)).fetchone()
     return row[0] if row else None

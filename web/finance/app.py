@@ -46,6 +46,8 @@ def parse_cents(s):  # "-67,90" / "R$ 1.234,56" / "45.90" -> centavos (preserva 
     return -c if neg else c
 
 STATUSES = ["pendente", "confirmado", "conciliado", "importado", "agendado"]
+# movimentações (categorias is_transfer=1) não contam como gasto/receita
+NOTRANSFER = "COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
 
 def login_required(f):
     @functools.wraps(f)
@@ -118,15 +120,16 @@ def logout():
 def dashboard():
     mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
     c = db()
-    desp = c.execute("SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=?", (mes,)).fetchone()[0]
-    rec  = c.execute("SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)=?", (mes,)).fetchone()[0]
+    desp = c.execute(f"SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER}", (mes,)).fetchone()[0]
+    rec  = c.execute(f"SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)=? AND {NOTRANSFER}", (mes,)).fetchone()[0]
     n    = c.execute("SELECT COUNT(*) FROM transactions WHERE substr(date,1,7)=?", (mes,)).fetchone()[0]
     pend = c.execute("SELECT COUNT(*) FROM transactions WHERE status='pendente'").fetchone()[0]
     grupos = c.execute("""SELECT COALESCE(c.grupo,'(sem grupo)') g, -SUM(t.amount) v
                           FROM transactions t LEFT JOIN categories c ON c.name=t.category
-                          WHERE t.amount<0 AND substr(t.date,1,7)=? GROUP BY c.grupo ORDER BY v DESC""", (mes,)).fetchall()
-    cats = c.execute("""SELECT COALESCE(category,'—') cat, -SUM(amount) v FROM transactions
-                        WHERE amount<0 AND substr(date,1,7)=? GROUP BY category ORDER BY v DESC""", (mes,)).fetchall()
+                          WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(c.is_transfer,0)=0
+                          GROUP BY c.grupo ORDER BY v DESC""", (mes,)).fetchall()
+    cats = c.execute(f"""SELECT COALESCE(category,'—') cat, -SUM(amount) v FROM transactions
+                        WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} GROUP BY category ORDER BY v DESC""", (mes,)).fetchall()
     orc = c.execute("""SELECT b.category cat, b.limit_amount lim,
         COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)=?),0) spent
         FROM budgets b WHERE b.month='*' AND b.limit_amount>0
@@ -574,29 +577,38 @@ def api_account_del(aid):
 @login_required
 def grupos():
     c = db()
-    cats = c.execute("SELECT name, icon, grupo FROM categories ORDER BY COALESCE(grupo,'zzz'), name").fetchall()
+    cats = c.execute("SELECT name, icon, grupo, is_transfer FROM categories ORDER BY COALESCE(grupo,'zzz'), name").fetchall()
     gs = [r[0] for r in c.execute("SELECT DISTINCT grupo FROM categories WHERE grupo IS NOT NULL AND grupo<>'' ORDER BY grupo")]
     c.close()
-    inner = """<div class=card style=max-width:640px>
+    inner = """<div class=card style=max-width:680px>
     <h3 style=margin-top:0>Grupos de despesa</h3>
-    <p class=muted>Defina a qual grupo cada categoria pertence — é assim que as despesas da casa são somadas no Resumo. Digite um nome novo pra criar um grupo na hora.</p>
+    <p class=muted>Defina a qual grupo cada categoria pertence — é assim que as despesas da casa são somadas no Resumo. Marque <b>Movimentação</b> quando NÃO for gasto/receita (transferência, pagamento de fatura, aplicação/resgate) — essas não entram nos totais.</p>
     <datalist id=grps>{% for g in gs %}<option value="{{g}}">{% endfor %}</datalist>
-    <table><tr><th>Categoria</th><th>Grupo</th></tr>
+    <table><tr><th>Categoria</th><th>Grupo</th><th style=text-align:center>Movimentação<br><span class=tag>(não é gasto)</span></th></tr>
     {% for c in cats %}<tr><td>{{c['icon']}} {{c['name']}}</td>
-      <td><input list=grps value="{{c['grupo'] or ''}}" placeholder="(sem grupo)"
-        onchange="sg('{{c['name']}}',this)" style="width:100%;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td></tr>{% endfor %}
+      <td><input list=grps value="{{c['grupo'] or ''}}" placeholder="(sem grupo)" {{'disabled' if c['is_transfer']}}
+        onchange="sg('{{c['name']}}',this)" style="width:100%;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td>
+      <td style=text-align:center><input type=checkbox {{'checked' if c['is_transfer']}} onchange="st('{{c['name']}}',this)"></td></tr>{% endfor %}
     </table></div>
-    <script>function sg(name,el){fetch('/api/cat',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:'name='+encodeURIComponent(name)+'&value='+encodeURIComponent(el.value)})
-      .then(r=>r.json()).then(j=>{el.style.borderColor=j.ok?'var(--grn)':'var(--red)';setTimeout(()=>el.style.borderColor='var(--ln)',800);});}</script>"""
+    <script>function post(name,field,value,el){fetch('/api/cat',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'name='+encodeURIComponent(name)+'&field='+field+'&value='+encodeURIComponent(value)})
+      .then(r=>r.json()).then(j=>{if(el)el.style.borderColor=j.ok?'var(--grn)':'var(--red)';setTimeout(()=>{if(el)el.style.borderColor='var(--ln)'},800);});}
+    function sg(name,el){post(name,'grupo',el.value,el);}
+    function st(name,el){post(name,'is_transfer',el.checked?1:0,null);location.reload();}</script>"""
     return render(inner, cats=cats, gs=gs)
 
 @app.route("/api/cat", methods=["POST"])
 @login_required
 def api_cat():
-    name = request.form.get("name", ""); value = request.form.get("value", "").strip()
-    c = db(); c.execute("UPDATE categories SET grupo=? WHERE name=?", (value or None, name)); c.commit(); c.close()
-    return {"ok": True}
+    name = request.form.get("name", ""); field = request.form.get("field", "grupo"); value = request.form.get("value", "").strip()
+    c = db()
+    if field == "is_transfer":
+        c.execute("UPDATE categories SET is_transfer=? WHERE name=?", (1 if value in ("1", "true", "on") else 0, name))
+    elif field == "grupo":
+        c.execute("UPDATE categories SET grupo=? WHERE name=?", (value or None, name))
+    else:
+        c.close(); return {"ok": False, "err": "campo inválido"}, 400
+    c.commit(); c.close(); return {"ok": True}
 
 
 @app.route("/conciliacao", methods=["GET", "POST"])

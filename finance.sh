@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS accounts(
   bank TEXT, numero TEXT, color TEXT DEFAULT '#888', created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS categories(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, parent TEXT,
-  icon TEXT, color TEXT, grupo TEXT, rule_keywords TEXT DEFAULT '[]');
+  icon TEXT, color TEXT, grupo TEXT, is_transfer INTEGER DEFAULT 0, rule_keywords TEXT DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS transactions(
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL, time TEXT,
@@ -61,7 +61,10 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(categories);"   | grep -q '|grupo|'      || sq "ALTER TABLE categories ADD COLUMN grupo TEXT;"
   sq "PRAGMA table_info(accounts);"     | grep -q '|numero|'     || sq "ALTER TABLE accounts ADD COLUMN numero TEXT;"
   sq "PRAGMA table_info(transactions);" | grep -q '|favorecido|' || sq "ALTER TABLE transactions ADD COLUMN favorecido TEXT;"
+  sq "PRAGMA table_info(categories);"   | grep -q '|is_transfer|' || sq "ALTER TABLE categories ADD COLUMN is_transfer INTEGER DEFAULT 0;"
 }
+# cláusula SQL: exclui categorias marcadas como movimentação (não-gasto/não-receita)
+NOTRANSFER="COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
 
 seed_categories(){
   # name|parent|icon|color|grupo|keywords(csv)  — grupo só é aplicado se a categoria ainda não tiver um (preserva customização)
@@ -139,6 +142,14 @@ case "$cmd" in
         FROM transactions WHERE category IS NULL OR category='' ORDER BY date DESC LIMIT $lim;"
     ;;
 
+  transfer)  # transfer "<categoria>" <on|off>  — marca categoria como movimentação (não conta como gasto/receita)
+    cat="${1:?uso: transfer categoria on|off}"; st="${2:-on}"
+    v=1; [ "$st" = "off" ] && v=0
+    sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🔁');
+        UPDATE categories SET is_transfer=$v WHERE name='$(esc "$cat")';"
+    echo "OK — $cat: movimentação=$v"
+    ;;
+
   setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento
     id="${1:?uso: setcat <id> categoria}"; cat="${2:?categoria}"
     sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
@@ -188,7 +199,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     echo "Despesas por grupo ($mon):"
     sq -separator '|' "SELECT COALESCE(c.grupo,'(sem grupo)'), printf('R\$ %.2f',-SUM(t.amount)/100.0)
         FROM transactions t LEFT JOIN categories c ON c.name=t.category
-        WHERE t.amount<0 AND substr(t.date,1,7)='$mon'
+        WHERE t.amount<0 AND substr(t.date,1,7)='$mon' AND COALESCE(c.is_transfer,0)=0
         GROUP BY c.grupo ORDER BY SUM(t.amount) ASC;"
     ;;
 
@@ -244,12 +255,12 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
 
   summary)  # summary [YYYY-MM]
     mon="${1:-$(date +%Y-%m)}"
-    echo "Mês $mon"
-    echo "Despesas: $(cents_fmt "$(sq "SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)='$mon';")")"
-    echo "Receitas: $(cents_fmt "$(sq "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)='$mon';")")"
+    echo "Mês $mon (movimentações excluídas)"
+    echo "Despesas: $(cents_fmt "$(sq "SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)='$mon' AND $NOTRANSFER;")")"
+    echo "Receitas: $(cents_fmt "$(sq "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)='$mon' AND $NOTRANSFER;")")"
     echo "Por categoria (despesas):"
     sq -separator '|' "SELECT COALESCE(category,'—'), printf('R\$ %.2f',-SUM(amount)/100.0)
-        FROM transactions WHERE amount<0 AND substr(date,1,7)='$mon'
+        FROM transactions WHERE amount<0 AND substr(date,1,7)='$mon' AND $NOTRANSFER
         GROUP BY category ORDER BY SUM(amount) ASC;"
     ;;
 
