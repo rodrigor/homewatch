@@ -51,34 +51,34 @@
     {
       "id": "1781197317",
       "title": "[FINANÇAS F1] Banco de dados e estrutura base",
-      "description": "Criar finance.db (SQLite) com tabelas: accounts (id,name,type,bank,color), transactions (id,date,time,amount,description,merchant,category,subcategory,account_id,source,status,notes,installment_id,created_at), categories (id,name,parent,icon,color,rule_keywords), budgets (id,category,month,limit_amount), installments (id,total,amount,n_total,n_current,start_date,description,account_id), ofx_imports (id,filename,imported_at,matched,unmatched). Criar script finance.sh com comandos: add, list, categorize, accounts.",
+      "description": "Criar finance.db (SQLite) com tabelas: accounts (id,name,type,bank,color), transactions (id,date,time,amount,description,merchant,category,subcategory,account_id,source,status,notes,installment_id,external_id,created_at), categories (id,name,parent,icon,color,rule_keywords), budgets (id,category,month,limit_amount), installments (id,total,amount,n_total,n_current,start_date,description,account_id), ofx_imports (id,filename,imported_at,matched,unmatched). Criar script finance.sh com comandos: add, list, categorize, accounts.",
       "status": "backlog",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Valores monetários em CENTAVOS (INTEGER), nunca REAL/float (erro de arredondamento). transactions.external_id = FITID do OFX, com índice UNIQUE → reimportar OFX com período sobreposto não duplica."
     },
     {
       "id": "1781197318",
       "title": "[FINANÇAS F1] Web app base com login",
-      "description": "Criar web/finance/ em Flask (ou mesmo padrão do homewatch). Rotas: GET / → dashboard, GET /transacoes → listagem, POST /login, GET /logout. Autenticação simples com sessão + senha hasheada em finance_users.json (Rodrigo=admin, Ayla=editor). Interface similar ao painel de dispositivos de rede: tabela inline editável com campos clicáveis. Servido na mesma porta do homewatch (ex: /finance). Protegido por login — sem acesso sem autenticação.",
+      "description": "Criar web/finance/ em Flask (ou mesmo padrão do homewatch). Rotas: GET / → dashboard, GET /transacoes → listagem, POST /login, GET /logout. Autenticação simples com sessão + senha hasheada em finance_users.json (rodrigor=admin, ayla=editor). Interface similar ao painel de dispositivos de rede: tabela inline editável com campos clicáveis. Servido na mesma porta do homewatch (ex: /finance). Protegido por login — sem acesso sem autenticação.",
       "status": "backlog",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Usuários definidos: rodrigor (admin) e ayla (editor — esposa). Hash de senha com werkzeug.security. SEGURANÇA: dados financeiros em HTTP puro na LAN expõem a senha a qualquer dispositivo da rede (incluindo IoT não-confiável) — bind em 127.0.0.1 e acesso via VPN (Tailscale/WireGuard), ou ao menos avaliar HTTPS local."
     },
     {
       "id": "1781197319",
       "title": "[FINANÇAS F1] Lançamento manual de transações",
-      "description": "Permitir adicionar transações manualmente: (1) via web — formulário na página /transacoes/nova com campos date, amount, description, category, account, notes; (2) via Telegram — parse de frases como 'gastei R$45 almoço', 'uber R$22', 'mercado R$320 alimentação' → cria transação com status=manual. Edição e exclusão inline na listagem web. Filtros: mês, conta, categoria, status, busca por texto.",
+      "description": "Permitir adicionar transações manualmente: (1) via web — formulário na página /transacoes/nova com campos date, amount, description, category, account, notes; (2) via Telegram — parse de frases como 'gastei R$45 almoço', 'uber R$22', 'mercado R$320 alimentação' → cria transação com status=manual. Listagem simples para conferência (edição inline, filtros e exclusão ficam na F3 — item Listagem web editável).",
       "status": "backlog",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Lançamento via Telegram deve funcionar TAMBÉM para a ayla — hoje o chat dela cai no kid_handler (sandbox sem ferramentas). Definir caminho: comando dedicado interceptado antes do sandbox, ou ferramenta finance.sh exposta de forma restrita."
     },
     {
       "id": "1781197320",
       "title": "[FINANÇAS F2] Monitoramento de e-mail IMAP",
-      "description": "Criar finance_email.sh que faz poll IMAP em financeiro@mail.rodrigor.com (credenciais em finance.env). A cada 15min (cron), busca e-mails não lidos, identifica remetente e chama parser correspondente. Parsers Python por remetente: amazon.py (extrai pedido, itens, valor, data), mercadolivre.py, ifood.py, uber.py, 99.py, rappi.py. Cada parser retorna JSON {date, amount, description, merchant, category_hint}. Transação criada com status=pendente para revisão. E-mails processados marcados como lidos.",
+      "description": "Criar finance_email.sh que faz poll IMAP em compras@mail.rodrigor.com (credenciais em finance.env, gitignored). A cada 15min (cron), busca e-mails não lidos e extrai JSON {date, amount, description, merchant, category_hint}. Extração principal via Claude (haiku, schema rígido) — resiliente a mudança de template; parsers Python determinísticos (amazon.py, ifood.py, uber.py...) só onde a precisão compensar a manutenção. Transação criada com status=pendente para revisão. E-mails processados marcados como lidos.",
       "status": "backlog",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Conta criada (2026-06-11): compras@mail.rodrigor.com. Servidor: mail.supremecluster.com — IMAP 993 (SSL), SMTP 465 (SSL), login = endereço completo. Senha SÓ em finance.env no Pi (template em finance.env.example). Conteúdo de e-mail é dado não-confiável: ao usar Claude na extração, instruir que o corpo é dado, não instrução (mesma defesa do kid_handler)."
     },
     {
       "id": "1781197321",
@@ -132,6 +132,14 @@
       "id": "1781197327",
       "title": "[FINANÇAS F5] Relatório mensal automático",
       "description": "Cron no dia 1 de cada mês: gerar relatório do mês anterior em HTML e enviar para rodrigor@rodrigor.com (e opcionalmente Ayla). Conteúdo: total gasto, gasto por categoria (tabela + % do orçamento), top 10 transações, comparativo com mês anterior, saldo por conta, transações não conciliadas pendentes. Também acessível via web em /relatorios. Formato PDF opcional (wkhtmltopdf ou weasyprint).",
+      "status": "backlog",
+      "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781204175",
+      "title": "[FINANÇAS F1] Backup automático do finance.db",
+      "description": "Cron diário que faz backup do finance.db PARA FORA do Pi (cartão SD morre). Opções: sqlite3 .backup + envio para o e-mail compras@ (SMTP já configurado), rclone para nuvem, ou push criptografado para repo privado. Manter últimos 30 diários + 12 mensais. Testar restauração. Diferente do devices.db (rebuild via Pi-hole), o finance.db NÃO é reconstruível — backup é pré-requisito antes de acumular dados, por isso F1.",
       "status": "backlog",
       "created": "2026-06-11",
       "notes": ""

@@ -2,7 +2,12 @@
 config.env
 email.env
 todoist.env
+finance.env
+finance_users.json
 web/admin_token.txt
+
+# Banco de finanças (NÃO reconstruível — ver item de backup no backlog)
+finance.db
 
 # Dados pessoais e runtime
 state/
