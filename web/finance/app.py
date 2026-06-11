@@ -82,7 +82,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 .full{grid-column:1/-1}.muted{color:var(--mut)}
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
-<nav><a href="{{url_for('dashboard')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
+<nav><a href="{{url_for('home')}}">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
 <a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
@@ -102,7 +102,7 @@ def login():
         rec = users().get(u)
         if rec and check_password_hash(rec["hash"], p):
             session["user"] = u; session["role"] = rec.get("role", "editor")
-            return redirect(request.args.get("next") or url_for("dashboard"))
+            return redirect(request.args.get("next") or url_for("financas"))
         flash("Usuário ou senha inválidos.")
     inner = """<div class=card style="max-width:360px;margin:8vh auto">
     <h2 style="margin-top:0">💰 Finanças · PIrrai</h2>
@@ -113,12 +113,12 @@ def login():
 
 @app.route("/logout")
 def logout():
-    session.clear(); return redirect(url_for("login"))
+    session.clear(); return redirect(url_for("home"))
 
-# ---------- dashboard ----------
-@app.route("/")
+# ---------- dashboard financeiro ----------
+@app.route("/financas")
 @login_required
-def dashboard():
+def financas():
     mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
     c = db()
     desp = c.execute(f"SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)=? AND {NOTRANSFER} AND COALESCE(excepcional,0)=0", (mes,)).fetchone()[0]
@@ -661,6 +661,107 @@ def conciliacao():
     {% for r in last %}<tr><td>{{r['filename']}}</td><td class=tag>{{r['imported_at']}}</td>
     <td>{{r['matched']}}</td><td>{{r['unmatched']}}</td></tr>{% endfor %}</table></div>{% endif %}"""
     return render(inner, last=last, nimp=nimp, ncon=ncon)
+
+
+# ---------- landing page (pública) ----------
+LANDING_HTML = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIrrai — Home</title>
+<style>
+  :root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--accent:#6c8fff;--text:#e2e4f0;--muted:#8b8fa8;--green:#4caf82;--orange:#f5a623;--red:#e05555}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:0 16px 48px}
+  header{text-align:center;padding:48px 0 32px}
+  header h1{font-size:2rem;font-weight:700;letter-spacing:-.5px}
+  header h1 span{color:var(--accent)}
+  header p{color:var(--muted);margin-top:6px;font-size:.95rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;max-width:960px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:10px;transition:border-color .2s,transform .15s}
+  .card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .card .icon{font-size:2rem;line-height:1}
+  .card h2{font-size:1.1rem;font-weight:600}
+  .card p{font-size:.875rem;color:var(--muted);line-height:1.5}
+  .card .tag{font-size:.75rem;font-weight:600;padding:3px 8px;border-radius:20px;width:fit-content;margin-top:auto}
+  .tag.green{background:rgba(76,175,130,.15);color:var(--green)}
+  .tag.blue{background:rgba(108,143,255,.15);color:var(--accent)}
+  .tag.orange{background:rgba(245,166,35,.15);color:var(--orange)}
+  .tag.red{background:rgba(224,85,85,.15);color:var(--red)}
+  .section-title{max-width:960px;margin:32px auto 12px;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  footer{text-align:center;margin-top:48px;color:var(--muted);font-size:.8rem}
+  @media(max-width:480px){header h1{font-size:1.5rem}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏠 <span>PIrrai</span></h1>
+  <p>Raspberry Pi · Casa · Serviços internos</p>
+</header>
+
+<div class="section-title">Painéis</div>
+<div class="grid">
+
+  <a class="card" href="/financas" target="_self">
+    <div class="icon">💰</div>
+    <h2>Finanças</h2>
+    <p>Transações, orçamento mensal, conciliação OFX e relatórios.</p>
+    <span class="tag green">● online</span>
+  </a>
+
+  <a class="card" href="http://TAILSCALE_IP:8080" target="_blank">
+    <div class="icon">🌐</div>
+    <h2>Rede & Dispositivos</h2>
+    <p>Inventário de dispositivos da rede local, fabricantes e status.</p>
+    <span class="tag blue">LAN · porta 8080</span>
+  </a>
+
+  <a class="card" href="http://TAILSCALE_IP/admin" target="_blank">
+    <div class="icon">🛡️</div>
+    <h2>Pi-hole Admin</h2>
+    <p>Bloqueio de anúncios e rastreadores, estatísticas de DNS e listas.</p>
+    <span class="tag orange">DNS · porta 80</span>
+  </a>
+
+</div>
+
+<div class="section-title">Em desenvolvimento</div>
+<div class="grid">
+
+  <div class="card" style="opacity:.6;cursor:default">
+    <div class="icon">📓</div>
+    <h2>Obsidian Vault</h2>
+    <p>Busca e criação de notas do vault pessoal via sync Git.</p>
+    <span class="tag orange">backlog</span>
+  </div>
+
+  <div class="card" style="opacity:.6;cursor:default">
+    <div class="icon">👥</div>
+    <h2>Gestão Alunos Ayty</h2>
+    <p>Banco de dados e painel dos alunos dos projetos Ayty e Uaná.</p>
+    <span class="tag orange">backlog</span>
+  </div>
+
+  <div class="card" style="opacity:.6;cursor:default">
+    <div class="icon">📅</div>
+    <h2>Google Calendar</h2>
+    <p>Eventos do dia, criação de compromissos e lembretes via Telegram.</p>
+    <span class="tag orange">backlog</span>
+  </div>
+
+</div>
+
+<footer>
+  pirrai · Raspberry Pi · Debian 13 · acesso via Tailscale
+</footer>
+</body>
+</html>"""
+
+@app.route("/")
+def home():
+    html = LANDING_HTML.replace("TAILSCALE_IP", "100.125.219.122")
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 if __name__ == "__main__":
