@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS accounts(
   bank TEXT, color TEXT DEFAULT '#888', created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS categories(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, parent TEXT,
-  icon TEXT, color TEXT, rule_keywords TEXT DEFAULT '[]');
+  icon TEXT, color TEXT, grupo TEXT, rule_keywords TEXT DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS transactions(
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL, time TEXT,
@@ -50,26 +50,31 @@ CREATE TABLE IF NOT EXISTS ofx_imports(
 SQL
 }
 
+migrate_cols(){  # adiciona coluna grupo em bancos já existentes
+  sq "PRAGMA table_info(categories);" | grep -q '|grupo|' || sq "ALTER TABLE categories ADD COLUMN grupo TEXT;"
+}
+
 seed_categories(){
-  # name|parent|icon|color|keywords(csv)
-  while IFS='|' read -r name parent icon color kws; do
+  # name|parent|icon|color|grupo|keywords(csv)  — grupo só é aplicado se a categoria ainda não tiver um (preserva customização)
+  while IFS='|' read -r name parent icon color grupo kws; do
     [ -z "$name" ] && continue
     local jkw; jkw=$(printf '%s' "$kws" | jq -Rc 'split(",")|map(select(length>0))')
-    sq "INSERT OR IGNORE INTO categories(name,parent,icon,color,rule_keywords)
-        VALUES('$name','$parent','$icon','$color','$(printf '%s' "$jkw" | sed "s/'/''/g")');"
+    sq "INSERT INTO categories(name,parent,icon,color,grupo,rule_keywords)
+        VALUES('$name','$parent','$icon','$color','$(esc "$grupo")','$(printf '%s' "$jkw" | sed "s/'/''/g")')
+        ON CONFLICT(name) DO UPDATE SET grupo=COALESCE(categories.grupo, excluded.grupo);"
   done <<'CATS'
-Mercado||🛒|#2e7d32|mercado,supermercado,atacad,carrefour,pao de acucar,assai,big,extra,hortifruti
-Alimentação||🍔|#ef6c00|ifood,rappi,uber eats,restaurante,padaria,lanche,delivery,bar,cafe
-Transporte||🚗|#1565c0|uber,99app,99 tecnologia,taxi,posto,gasolina,combustivel,estacionamento,pedagio,metro
-Compras||🛍️|#6a1b9a|amazon,mercadolivre,mercado livre,magazine,americanas,shopee,aliexpress,shein
-Assinaturas||📺|#c62828|netflix,spotify,youtube,prime,hbo,max,disney,apple.com,google,icloud,chatgpt,openai,claude
-Saúde||💊|#00838f|farmacia,drogaria,droga,hospital,clinica,laboratorio,unimed,medico,dentista
-Casa||🏠|#5d4037|aluguel,condominio,luz,energia,enel,agua,gas,internet,vivo,claro,tim,net
-Educação||📚|#283593|escola,curso,faculdade,livro,udemy,alura
-Lazer||🎬|#ad1457|cinema,ingresso,viagem,hotel,airbnb,booking,show
-Serviços||🔧|#455a64|barbearia,salao,lavanderia,assinatura,mensalidade
-Receitas||💰|#1b5e20|salario,pagamento,deposito,pix recebido,rendimento,transferencia recebida
-Outros||📌|#757575|
+Mercado||🛒|#2e7d32|Casa|mercado,supermercado,atacad,carrefour,pao de acucar,assai,big,extra,hortifruti
+Alimentação||🍔|#ef6c00|Alimentação|ifood,rappi,uber eats,restaurante,padaria,lanche,delivery,bar,cafe
+Transporte||🚗|#1565c0|Transporte|uber,99app,99 tecnologia,taxi,posto,gasolina,combustivel,estacionamento,pedagio,metro
+Compras||🛍️|#6a1b9a|Pessoal|amazon,mercadolivre,mercado livre,magazine,americanas,shopee,aliexpress,shein
+Assinaturas||📺|#c62828|Pessoal|netflix,spotify,youtube,prime,hbo,max,disney,apple.com,google,icloud,chatgpt,openai,claude
+Saúde||💊|#00838f|Saúde|farmacia,drogaria,droga,hospital,clinica,laboratorio,unimed,medico,dentista
+Casa||🏠|#5d4037|Casa|aluguel,condominio,luz,energia,enel,agua,gas,internet,vivo,claro,tim,net
+Educação||📚|#283593|Pessoal|escola,curso,faculdade,livro,udemy,alura
+Lazer||🎬|#ad1457|Lazer|cinema,ingresso,viagem,hotel,airbnb,booking,show
+Serviços||🔧|#455a64|Casa|barbearia,salao,lavanderia,assinatura,mensalidade
+Receitas||💰|#1b5e20|Receitas|salario,pagamento,deposito,pix recebido,rendimento,transferencia recebida
+Outros||📌|#757575|Outros|
 CATS
 }
 
@@ -93,8 +98,23 @@ autocat_match(){
 cmd="${1:-help}"; shift 2>/dev/null || true
 case "$cmd" in
   init)
-    init_db; seed_categories
+    init_db; migrate_cols; seed_categories
     echo "OK — finance.db pronto ($(sq 'SELECT COUNT(*) FROM categories;') categorias). Caminho: $DB"
+    ;;
+
+  group)  # group "<categoria>" "<grupo>"
+    cat="${1:?uso: group \"categoria\" \"grupo\"}"; grp="${2:?grupo}"
+    sq "UPDATE categories SET grupo='$(esc "$grp")' WHERE name='$(esc "$cat")';"
+    echo "OK — $cat → grupo $grp"
+    ;;
+
+  groups)  # groups [YYYY-MM] : despesas agrupadas
+    mon="${1:-$(date +%Y-%m)}"
+    echo "Despesas por grupo ($mon):"
+    sq -separator '|' "SELECT COALESCE(c.grupo,'(sem grupo)'), printf('R\$ %.2f',-SUM(t.amount)/100.0)
+        FROM transactions t LEFT JOIN categories c ON c.name=t.category
+        WHERE t.amount<0 AND substr(t.date,1,7)='$mon'
+        GROUP BY c.grupo ORDER BY SUM(t.amount) ASC;"
     ;;
 
   accounts)
