@@ -331,5 +331,5 @@ def conciliacao():
 
 
 if __name__ == "__main__":
-    # exposto na rede (LAN) — protegido por login. Porta externa do Pi: 8090.
-    app.run(host="0.0.0.0", port=8090, threaded=True)
+    # bind só em localhost; exposição segura é feita pelo `tailscale serve` (HTTPS, só no tailnet).
+    app.run(host="127.0.0.1", port=8090, threaded=True)
