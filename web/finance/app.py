@@ -342,12 +342,12 @@ def financas():
     {% set labels = {1:'Comprometido', 2:'Necessário variável', 3:'Discricionário', 0:'Sem classificação'} %}
     {% for niv, val in [(1,n1),(2,n2),(3,n3)] if val > 0 %}
     <div class=gbar>
-      <div class=gl>N{{niv}} {{labels[niv]}}</div>
+      <div class=gl><span class=catlink data-tipo=nivel data-val="{{niv}}" data-lbl="N{{niv}} {{labels[niv]}}" onclick="openTx(this)" title="ver transações">N{{niv}} {{labels[niv]}}</span></div>
       <div class=gt><div class=gf style="width:{{(val/total_niv*100)|round(1)}}%;background:{{cores[niv]}}"></div></div>
       <div class=gv>{{val|brl}} <span class=tag>{{(val/total_niv*100)|round(0)|int}}%</span></div>
     </div>{% endfor %}
     {% if n0 > 0 %}<div class=gbar>
-      <div class=gl style="color:var(--mut)">Sem nível</div>
+      <div class=gl style="color:var(--mut)"><span class=catlink data-tipo=nivel data-val="0" data-lbl="Sem nível" onclick="openTx(this)" title="ver transações">Sem nível</span></div>
       <div class=gt><div class=gf style="width:{{(n0/total_niv*100)|round(1)}}%;background:#6e7681"></div></div>
       <div class=gv style="color:var(--mut)">{{n0|brl}} <span class=tag>{{(n0/total_niv*100)|round(0)|int}}%</span></div>
     </div>{% endif %}
@@ -370,7 +370,7 @@ def financas():
       <a class=tag href="{{url_for('grupos')}}">editar grupos →</a></div>
     {% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
     {% if grupos %}{% for r in grupos %}<div class=gbar>
-      <div class=gl>{{r['g']}}</div>
+      <div class=gl><span class=catlink data-tipo=grupo data-val="{{r['g']}}" onclick="openTx(this)" title="ver transações">{{r['g']}}</span></div>
       <div class=gt><div class=gf style="width:{{(r['v']/maxg*100)|round(1)}}%;background:{{pal[loop.index0 % 9]}}"></div></div>
       <div class=gv>{{r['v']|brl}} <span class=tag>{{(r['v']/totg*100)|round(0)|int}}%</span></div></div>{% endfor %}
     {% else %}<p class=muted>Sem despesas em {{mes}}. <a href="{{url_for('nova')}}">Lançar →</a></p>{% endif %}</div>
@@ -386,7 +386,7 @@ def financas():
       <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:{{nv.color}}"></span>
       <b style="color:{{nv.color}}">{{nv.label}}</b>
       <b style="margin-left:auto" class=neg>{{nv.total|brl}}</b></div>
-    <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td><span class=catlink data-cat="{{cat}}" onclick="openCat(this)" title="ver transações">{{cat}}</span></td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
+    <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td><span class=catlink data-tipo=cat data-val="{{cat}}" onclick="openTx(this)" title="ver transações">{{cat}}</span></td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
     {% endfor %}</div>{% endif %}
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
@@ -410,11 +410,11 @@ def financas():
         <div id=catbody class=modalbody></div>
       </div></div>
     <script>
-    function openCat(el){var cat=el.dataset.cat;
-      document.getElementById('catttl').textContent='Transações · '+cat+' · {{mes}}';
+    function openTx(el){var tipo=el.dataset.tipo||'cat',val=el.dataset.val,lbl=el.dataset.lbl||val;
+      document.getElementById('catttl').textContent='Transações · '+lbl+' · {{mes}}';
       document.getElementById('catbody').innerHTML='<p class=muted>Carregando…</p>';
       document.getElementById('catmodal').classList.add('on');
-      fetch('/api/cat_tx?mes={{mes}}&cat='+encodeURIComponent(cat))
+      fetch('/api/cat_tx?mes={{mes}}&tipo='+tipo+'&val='+encodeURIComponent(val))
         .then(function(r){return r.text();}).then(function(h){document.getElementById('catbody').innerHTML=h;})
         .catch(function(){document.getElementById('catbody').innerHTML='<p class=neg>Erro ao carregar.</p>';});}
     function closeCat(){document.getElementById('catmodal').classList.remove('on');}
@@ -428,15 +428,25 @@ def financas():
 @app.route("/api/cat_tx")
 @login_required
 def api_cat_tx():
-    cat = request.args.get("cat", "")
+    tipo = request.args.get("tipo", "cat")
+    val = request.args.get("val", request.args.get("cat", ""))
     mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
     c = db()
     base = """SELECT t.*, a.name acc FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
               WHERE {w} AND substr(t.date,1,7)=? ORDER BY t.date DESC, t.id DESC"""
-    if cat in ("(sem categoria)", "—", ""):
+    # despesas que entram nos agregados de grupo/nível (não-transferência, não-excepcional)
+    despesa = (" AND t.amount<0 AND COALESCE(t.excepcional,0)=0"
+               " AND COALESCE(t.category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)")
+    if tipo == "grupo":
+        w = "t.category IN (SELECT name FROM categories WHERE COALESCE(NULLIF(grupo,''),'(sem grupo)')=?)" + despesa
+        rows = c.execute(base.format(w=w), (val, mes)).fetchall()
+    elif tipo == "nivel":
+        w = "COALESCE((SELECT nivel FROM categories WHERE name=t.category),0)=?" + despesa
+        rows = c.execute(base.format(w=w), (int(val or 0), mes)).fetchall()
+    elif val in ("(sem categoria)", "—", ""):
         rows = c.execute(base.format(w="(t.category IS NULL OR t.category='')"), (mes,)).fetchall()
     else:
-        rows = c.execute(base.format(w="COALESCE(t.category,'')=?"), (cat, mes)).fetchall()
+        rows = c.execute(base.format(w="COALESCE(t.category,'')=?"), (val, mes)).fetchall()
     accs = c.execute("SELECT id,name,color FROM accounts ORDER BY name").fetchall()
     cat_rows = c.execute("SELECT name, COALESCE(NULLIF(grupo,''),'(sem grupo)') g FROM categories ORDER BY g, name").fetchall()
     tot = sum(r["amount"] for r in rows); c.close()
