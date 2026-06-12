@@ -136,7 +136,22 @@ def financas():
         COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)=?),0) spent
         FROM budgets b WHERE b.month='*' AND b.limit_amount>0
         ORDER BY (spent*1.0/b.limit_amount) DESC""", (mes,)).fetchall()
+    meses_raw = c.execute(f"""SELECT substr(date,1,7) m,
+        -SUM(CASE WHEN COALESCE(excepcional,0)=0 THEN amount ELSE 0 END) rec,
+        -SUM(CASE WHEN COALESCE(excepcional,0)=1 THEN amount ELSE 0 END) exc
+        FROM transactions WHERE amount<0 AND {NOTRANSFER}
+        GROUP BY m ORDER BY m DESC LIMIT 12""").fetchall()
     c.close()
+    MESN = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+    mm = list(reversed(meses_raw))
+    maxm = max([r["rec"] + r["exc"] for r in mm], default=1) or 1
+    meses = []
+    for r in mm:
+        tot = r["rec"] + r["exc"]
+        meses.append({"label": f'{MESN[int(r["m"][5:7]) - 1]}/{r["m"][2:4]}',
+                      "rec": r["rec"], "exc": r["exc"], "tot": tot, "atual": r["m"] == mes,
+                      "rec_px": round(r["rec"] / maxm * 150), "exc_px": round(r["exc"] / maxm * 150),
+                      "short": (f"{tot/100000:.1f}k" if tot >= 100000 else str(int(round(tot / 100))))})
     maxg = max([r["v"] for r in grupos], default=1) or 1
     totg = sum(r["v"] for r in grupos) or 1
     inner = """<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -148,6 +163,18 @@ def financas():
     <div class="card kpi"><div class=l>Receitas</div><div class="v pos">{{rec|brl}}</div></div>
     <div class="card kpi"><div class=l>Saldo</div><div class="v">{{(rec-desp)|brl}}</div></div>
     <div class="card kpi"><div class=l>Transações</div><div class=v>{{n}}</div><div class=tag>{{pend}} pendente(s)</div></div></div>
+    {% if meses %}<div class=card><h3 style=margin-top:0>Despesas mês a mês</h3>
+    <div class=mchart>
+      {% for m in meses %}<div class="mcol{{' on' if m.atual}}">
+        <div class=mval>{{m.short}}</div>
+        <div class=mbar title="{{m.tot|brl}}">
+          {% if m.exc_px %}<div style="height:{{m.exc_px}}px;background:#d29922" title="excepcional: {{m.exc|brl}}"></div>{% endif %}
+          <div style="height:{{m.rec_px}}px;background:var(--red)" title="recorrente: {{m.rec|brl}}"></div>
+        </div>
+        <div class=mlbl>{{m.label}}</div>
+      </div>{% endfor %}
+    </div>
+    <div class=tag style=margin-top:8px><span style="color:var(--red)">■</span> recorrente &nbsp;&nbsp; <span style="color:#d29922">■</span> excepcional</div></div>{% endif %}
     <div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por grupo</h3>
       <a class=tag href="{{url_for('grupos')}}">editar grupos →</a></div>
     {% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
@@ -167,8 +194,14 @@ def financas():
     {% for r in cats %}<tr><td>{{r['cat']}}</td><td style=text-align:right class=neg>{{r['v']|brl}}</td></tr>{% endfor %}</table></div>{% endif %}
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
-    .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}</style>"""
-    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg)
+    .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}
+    .mchart{display:flex;align-items:flex-end;gap:14px;min-height:185px;padding-top:10px;overflow-x:auto}
+    .mcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:40px;flex:1}
+    .mbar{display:flex;flex-direction:column;justify-content:flex-end;width:34px}
+    .mbar>div{border-radius:3px 3px 0 0;min-height:2px}
+    .mval{font-size:11px;color:var(--mut);margin-bottom:4px}
+    .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}</style>"""
+    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg, meses=meses)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
