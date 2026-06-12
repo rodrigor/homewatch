@@ -47,6 +47,7 @@ def parse_cents(s):  # "-67,90" / "R$ 1.234,56" / "45.90" -> centavos (preserva 
 
 STATUSES = ["pendente", "confirmado", "conciliado", "importado", "agendado"]
 STATUS_ICONS = {"pendente": "⏳", "confirmado": "✅", "conciliado": "🔗", "importado": "📥", "agendado": "📅"}
+STATUS_GLYPH = {"pendente": "○", "confirmado": "✓", "conciliado": "⇄", "importado": "↓", "agendado": "◷"}  # não-emoji, monocromáticos
 # movimentações (categorias is_transfer=1) não contam como gasto/receita
 NOTRANSFER = "COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
 
@@ -259,15 +260,23 @@ def transacoes():
     f_status = request.args.get("status", ""); q = request.args.get("q", "").strip()
     where = ["substr(t.date,1,7)=?"]; params = [mes]
     if f_conta:  where.append("t.account_id=?"); params.append(f_conta)
-    if f_cat:    where.append("COALESCE(t.category,'')=?"); params.append(f_cat)
+    if f_cat == "__sem__":
+        where.append("(t.category IS NULL OR t.category='')")
+    elif f_cat in ("n0", "n1", "n2", "n3"):
+        where.append("t.category IN (SELECT name FROM categories WHERE COALESCE(nivel,0)=?)"); params.append(int(f_cat[1]))
+    elif f_cat:
+        where.append("COALESCE(t.category,'')=?"); params.append(f_cat)
     if f_status: where.append("t.status=?"); params.append(f_status)
     if q:        where.append("(t.description LIKE ? OR t.merchant LIKE ?)"); params += [f"%{q}%", f"%{q}%"]
     c = db()
     rows = c.execute(f"""SELECT t.*, a.name acc FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
                         WHERE {' AND '.join(where)} ORDER BY t.date DESC, t.id DESC""", params).fetchall()
-    accs = c.execute("SELECT id,name FROM accounts ORDER BY name").fetchall()
-    cats = c.execute("SELECT name FROM categories ORDER BY name").fetchall()
+    accs = c.execute("SELECT id,name,color FROM accounts ORDER BY name").fetchall()
+    cat_rows = c.execute("SELECT name, COALESCE(NULLIF(grupo,''),'(sem grupo)') g FROM categories ORDER BY g, name").fetchall()
     tot = sum(r["amount"] for r in rows); c.close()
+    cat_groups = {}
+    for r in cat_rows: cat_groups.setdefault(r["g"], []).append(r["name"])
+    acolor = {a["id"]: (a["color"] or "#888") for a in accs}
     inner = """<div class=card><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
     <h3 style="margin:0;flex:1">Transações</h3><a class=btn href="{{url_for('nova')}}">+ Lançar</a></div>
     <form class=filtros>
@@ -275,7 +284,14 @@ def transacoes():
       <select name=conta onchange=this.form.submit()><option value="">Conta: todas</option>
         {% for a in accs %}<option value="{{a['id']}}" {{'selected' if f_conta==a['id']|string}}>{{a['name']}}</option>{% endfor %}</select>
       <select name=categoria onchange=this.form.submit()><option value="">Categoria: todas</option>
-        {% for ct in cats %}<option {{'selected' if f_cat==ct['name']}}>{{ct['name']}}</option>{% endfor %}</select>
+        <option value="__sem__" {{'selected' if f_cat=='__sem__'}}>— sem categoria —</option>
+        <optgroup label="Por nível">
+          <option value="n1" {{'selected' if f_cat=='n1'}}>N1 — Comprometido</option>
+          <option value="n2" {{'selected' if f_cat=='n2'}}>N2 — Necessário variável</option>
+          <option value="n3" {{'selected' if f_cat=='n3'}}>N3 — Discricionário</option>
+          <option value="n0" {{'selected' if f_cat=='n0'}}>N0 — neutro</option></optgroup>
+        {% for g,names in cat_groups.items() %}<optgroup label="{{g}}">
+          {% for nm in names %}<option {{'selected' if f_cat==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select>
       <select name=status onchange=this.form.submit()><option value="">Status: todos</option>
         {% for s in statuses %}<option {{'selected' if f_status==s}}>{{s}}</option>{% endfor %}</select>
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
@@ -286,9 +302,9 @@ def transacoes():
       <td><input type=datetime-local id=n_date class=dt></td>
       <td><input id=n_desc placeholder="+ nova transação…"></td>
       <td><input id=n_fav placeholder="favorecido"></td>
-      <td><select id=n_cat><option value="">—</option>{% for ct in cats %}<option>{{ct['name']}}</option>{% endfor %}</select></td>
+      <td><select id=n_cat><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
       <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select id=n_status class=st>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
+      <td><select id=n_status class=stsel title=status>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{glyph[s]}}</option>{% endfor %}</select></td>
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
       <td></td>
       <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
@@ -297,18 +313,19 @@ def transacoes():
       <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
       <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
       <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>
-        {% for ct in cats %}<option {{'selected' if r['category']==ct['name']}}>{{ct['name']}}</option>{% endfor %}</select></td>
-      <td><select onchange="sv({{r['id']}},'account_id',this)"><option value="">—</option>
+        {% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+      <td><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>
         {% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select class=st onchange="sv({{r['id']}},'status',this)">
-        {% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{icons[s]}} {{s}}</option>{% endfor %}</select></td>
+      <td><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">
+        {% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
       <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
         onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
       <td style=text-align:center><input type=checkbox {{'checked' if r['excepcional']}} onchange="sx({{r['id']}},this)" title="despesa fora do normal"></td>
       <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
     {% if rows %}<tr><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
       <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td><td></td></tr>{% endif %}</table>
-    {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}</div>
+    {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
+    <div class=slegend>Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}</div></div>
     <style>.wrap{max-width:none}#tx{font-size:13px}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
     .dt{max-width:195px}.st{max-width:140px}#tx td,#tx th{padding:6px 6px}
     #tx input,#tx select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
@@ -316,12 +333,17 @@ def transacoes():
     #tx .val.neg{color:var(--red)}#tx .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
     button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
     button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
-    tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}</style>
+    tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}
+    .stsel{max-width:56px;text-align:center;font-size:15px;font-weight:700}
+    tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.st-conciliado .stsel{color:#2f81f7}tr.st-importado .stsel{color:var(--red)}tr.st-agendado .stsel{color:#a371f7}
+    .acct{border-left:4px solid var(--ac,transparent)!important;padding-left:8px!important}.slegend{font-size:12px;color:var(--mut);margin-top:10px}</style>
     <script>
+    var ACOLOR={{ acolor|tojson }};
+    function sacc(id,el){sv(id,'account_id',el);el.style.setProperty('--ac',ACOLOR[el.value]||'transparent');}
     function sv(id,field,el){const b='field='+field+'&value='+encodeURIComponent(el.value);
       fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
       .then(r=>r.json()).then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');
-        if(j.ok&&field=='status'){el.closest('tr').className='st-'+el.value;}
+        if(j.ok&&field=='status'){el.closest('tr').className='st-'+el.value;el.title=el.value;}
         setTimeout(()=>el.classList.remove('saved'),700);}).catch(()=>el.classList.add('err'));}
     function dl(id){if(!confirm('Excluir esta transação?'))return;
       fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
@@ -333,7 +355,8 @@ def transacoes():
       fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
       .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
     </script>"""
-    return render(inner, mes=mes, rows=rows, accs=accs, cats=cats, statuses=STATUSES, icons=STATUS_ICONS,
+    return render(inner, mes=mes, rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
+                  statuses=STATUSES, glyph=STATUS_GLYPH,
                   f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
 
 @app.route("/api/tx/<int:tid>", methods=["POST"])
