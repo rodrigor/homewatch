@@ -83,7 +83,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 .full{grid-column:1/-1}.muted{color:var(--mut)}
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
-<nav><a href="{{url_for('home')}}">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a><a href="{{url_for('favorecidos')}}">Favorecidos</a>
+<nav><a href="https://pirrai.tail414b9b.ts.net/" title="serviços do PIrrai">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a><a href="{{url_for('favorecidos')}}">Favorecidos</a>
 <a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
@@ -1182,8 +1182,7 @@ LANDING_HTML = """<!DOCTYPE html>
 
 @app.route("/")
 def home():
-    html = LANDING_HTML.replace("TAILSCALE_IP", "100.125.219.122")
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    return redirect(url_for("financas"))  # raiz das Finanças vai direto pro Resumo (landing do PIrrai é a raiz do tailnet)
 
 
 if __name__ == "__main__":
