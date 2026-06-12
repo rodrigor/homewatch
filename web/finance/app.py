@@ -142,6 +142,17 @@ def financas():
          SUM(CASE WHEN amount>0 AND COALESCE(excepcional,0)=0 THEN amount ELSE 0 END) receita
         FROM transactions WHERE {NOTRANSFER}
         GROUP BY m ORDER BY m DESC LIMIT 12""").fetchall()
+    # --- Estrutura de gasto por nível ---
+    nivel_rows = c.execute("""
+        SELECT COALESCE(cat.nivel, 0) niv, -SUM(t.amount) total
+        FROM transactions t LEFT JOIN categories cat ON cat.name=t.category
+        WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
+        GROUP BY cat.nivel ORDER BY cat.nivel""", (mes,)).fetchall()
+    nivel_map = {r["niv"]: r["total"] for r in nivel_rows}
+    n1 = nivel_map.get(1, 0); n2 = nivel_map.get(2, 0); n3 = nivel_map.get(3, 0); n0 = nivel_map.get(0, 0)
+    obrigatorio = n1 + n2
+    cfg_sal = c.execute("SELECT value FROM config WHERE key='salario_base'").fetchone()
+    salario_base = int(cfg_sal[0]) if cfg_sal else 0
     c.close()
     MESN = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
     mm = list(reversed(meses_raw))
@@ -179,6 +190,37 @@ def financas():
       </div>{% endfor %}
     </div>
     <div class=tag style=margin-top:8px><span style="color:var(--red)">■</span> despesa &nbsp; <span style="color:#d29922">■</span> excepcional &nbsp; <span style="color:var(--grn)">■</span> receita</div></div>{% endif %}
+    <div class=card><div style="display:flex;align-items:center;margin-bottom:10px"><h3 style="margin:0;flex:1">Estrutura de gasto</h3>
+      <a class=tag href="{{url_for('grupos')}}">editar níveis →</a></div>
+    {% set total_niv = n1+n2+n3+n0 or 1 %}
+    {% set cores = {1:'#2f81f7', 2:'#3fb950', 3:'#ef6c00', 0:'#6e7681'} %}
+    {% set labels = {1:'Comprometido', 2:'Necessário variável', 3:'Discricionário', 0:'Sem classificação'} %}
+    {% for niv, val in [(1,n1),(2,n2),(3,n3)] if val > 0 %}
+    <div class=gbar>
+      <div class=gl>N{{niv}} {{labels[niv]}}</div>
+      <div class=gt><div class=gf style="width:{{(val/total_niv*100)|round(1)}}%;background:{{cores[niv]}}"></div></div>
+      <div class=gv>{{val|brl}} <span class=tag>{{(val/total_niv*100)|round(0)|int}}%</span></div>
+    </div>{% endfor %}
+    {% if n0 > 0 %}<div class=gbar>
+      <div class=gl style="color:var(--mut)">Sem nível</div>
+      <div class=gt><div class=gf style="width:{{(n0/total_niv*100)|round(1)}}%;background:#6e7681"></div></div>
+      <div class=gv style="color:var(--mut)">{{n0|brl}} <span class=tag>{{(n0/total_niv*100)|round(0)|int}}%</span></div>
+    </div>{% endif %}
+    <hr style="border:none;border-top:1px solid var(--ln);margin:10px 0">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:14px">
+      <div><span class=tag>Obrigatório (N1+N2)</span><br><b style="color:#2f81f7">{{obrigatorio|brl}}</b></div>
+      <div><span class=tag>Discricionário (N3)</span><br><b style="color:#ef6c00">{{n3|brl}}</b></div>
+      {% if salario_base > 0 %}
+      <div><span class=tag>Salário base</span><br><b>{{salario_base|brl}}</b></div>
+      <div><span class=tag>Obrig. vs salário</span><br>
+        {% set pct = (obrigatorio*100//salario_base) %}
+        <b style="color:{{'var(--red)' if pct>100 else ('#d29922' if pct>80 else 'var(--grn)')}}">{{pct}}%</b>
+        <span class=tag>{{'⚠️ estourou' if pct>100 else ('⚠️ apertado' if pct>80 else '✅ ok')}}</span>
+      </div>{% else %}
+      <div style="color:var(--mut);font-size:13px">Configure o salário base:<br>
+        <code>finance.sh config salario_base &lt;valor&gt;</code></div>
+      {% endif %}
+    </div></div>
     <div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por grupo</h3>
       <a class=tag href="{{url_for('grupos')}}">editar grupos →</a></div>
     {% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
@@ -205,7 +247,8 @@ def financas():
     .mbar{display:flex;flex-direction:column;justify-content:flex-end;width:18px}
     .mbar>div{border-radius:3px 3px 0 0;min-height:2px}
     .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}</style>"""
-    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg, meses=meses)
+    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg, meses=meses,
+                  n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
@@ -627,24 +670,41 @@ def api_account_del(aid):
 @login_required
 def grupos():
     c = db()
-    cats = c.execute("SELECT name, icon, grupo, is_transfer FROM categories ORDER BY COALESCE(grupo,'zzz'), name").fetchall()
+    cats = c.execute("SELECT name, icon, grupo, is_transfer, COALESCE(nivel,0) nivel FROM categories ORDER BY COALESCE(grupo,'zzz'), name").fetchall()
     gs = [r[0] for r in c.execute("SELECT DISTINCT grupo FROM categories WHERE grupo IS NOT NULL AND grupo<>'' ORDER BY grupo")]
     c.close()
-    inner = """<div class=card style=max-width:680px>
-    <h3 style=margin-top:0>Grupos de despesa</h3>
-    <p class=muted>Defina a qual grupo cada categoria pertence — é assim que as despesas da casa são somadas no Resumo. Marque <b>Movimentação</b> quando NÃO for gasto/receita (transferência, pagamento de fatura, aplicação/resgate) — essas não entram nos totais.</p>
+    inner = """<div class=card>
+    <h3 style=margin-top:0>Grupos e níveis de despesa</h3>
+    <p class=muted>
+      <b>Grupo:</b> agrupa categorias no resumo mensal.<br>
+      <b>Nível:</b> classifica a obrigatoriedade — <b style="color:#2f81f7">N1 Comprometido</b> (fixo/contrato),
+      <b style="color:#3fb950">N2 Necessário variável</b> (todo mês, valor oscila),
+      <b style="color:#ef6c00">N3 Discricionário</b> (quando sobra). N0 = movimentação ou receita.<br>
+      Marque <b>Movimentação</b> quando NÃO for gasto/receita — essas não entram nos totais.
+    </p>
     <datalist id=grps>{% for g in gs %}<option value="{{g}}">{% endfor %}</datalist>
-    <table><tr><th>Categoria</th><th>Grupo</th><th style=text-align:center>Movimentação<br><span class=tag>(não é gasto)</span></th></tr>
+    <table><tr><th>Categoria</th><th>Grupo</th><th style=text-align:center>Nível</th><th style=text-align:center>Movimentação<br><span class=tag>(não é gasto)</span></th></tr>
+    {% set ncores = {0:'#6e7681',1:'#2f81f7',2:'#3fb950',3:'#ef6c00'} %}
+    {% set nlabels = {0:'N0',1:'N1',2:'N2',3:'N3'} %}
+    {% set nfull = {0:'Neutro (movimentação/receita)',1:'Comprometido (fixo/contrato)',2:'Necessário variável',3:'Discricionário'} %}
     {% for c in cats %}<tr><td>{{c['icon']}} {{c['name']}}</td>
       <td><input list=grps value="{{c['grupo'] or ''}}" placeholder="(sem grupo)" {{'disabled' if c['is_transfer']}}
         onchange="sg('{{c['name']}}',this)" style="width:100%;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td>
+      <td style=text-align:center><span class=pills>
+        {% for v in [0,1,2,3] %}<button type=button class="pill{{' on' if c['nivel']==v}}" style="--pc:{{ncores[v]}}" title="{{nfull[v]}}" onclick="sn(this,'{{c['name']}}',{{v}})">{{nlabels[v]}}</button>{% endfor %}
+      </span></td>
       <td style=text-align:center><input type=checkbox {{'checked' if c['is_transfer']}} onchange="st('{{c['name']}}',this)"></td></tr>{% endfor %}
     </table></div>
+    <style>.pills{display:inline-flex;gap:3px}
+    .pill{background:transparent;border:1px solid var(--ln);color:var(--mut);border-radius:7px;padding:4px 9px;font-size:12px;font-weight:700;cursor:pointer;min-width:32px;transition:all .12s}
+    .pill:hover{border-color:var(--pc);color:var(--pc)}
+    .pill.on{background:var(--pc);border-color:var(--pc);color:#fff}</style>
     <script>function post(name,field,value,el){fetch('/api/cat',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body:'name='+encodeURIComponent(name)+'&field='+field+'&value='+encodeURIComponent(value)})
       .then(r=>r.json()).then(j=>{if(el)el.style.borderColor=j.ok?'var(--grn)':'var(--red)';setTimeout(()=>{if(el)el.style.borderColor='var(--ln)'},800);});}
     function sg(name,el){post(name,'grupo',el.value,el);}
-    function st(name,el){post(name,'is_transfer',el.checked?1:0,null);location.reload();}</script>"""
+    function st(name,el){post(name,'is_transfer',el.checked?1:0,null);location.reload();}
+    function sn(el,name,v){var box=el.parentNode;box.querySelectorAll('.pill').forEach(function(b){b.classList.remove('on');});el.classList.add('on');post(name,'nivel',v,null);}</script>"""
     return render(inner, cats=cats, gs=gs)
 
 @app.route("/api/cat", methods=["POST"])
@@ -656,6 +716,13 @@ def api_cat():
         c.execute("UPDATE categories SET is_transfer=? WHERE name=?", (1 if value in ("1", "true", "on") else 0, name))
     elif field == "grupo":
         c.execute("UPDATE categories SET grupo=? WHERE name=?", (value or None, name))
+    elif field == "nivel":
+        try:
+            n = int(value)
+            if n not in (0, 1, 2, 3): raise ValueError()
+            c.execute("UPDATE categories SET nivel=? WHERE name=?", (n, name))
+        except ValueError:
+            c.close(); return {"ok": False, "err": "nivel inválido (0-3)"}, 400
     else:
         c.close(); return {"ok": False, "err": "campo inválido"}, 400
     c.commit(); c.close(); return {"ok": True}
