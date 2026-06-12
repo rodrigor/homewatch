@@ -683,7 +683,11 @@ def grupos():
       Marque <b>Movimentação</b> quando NÃO for gasto/receita — essas não entram nos totais.
     </p>
     <datalist id=grps>{% for g in gs %}<option value="{{g}}">{% endfor %}</datalist>
-    <table><tr><th>Categoria</th><th>Grupo</th><th style=text-align:center>Nível</th><th style=text-align:center>Movimentação<br><span class=tag>(não é gasto)</span></th></tr>
+    <table id=gtbl><tr>
+      <th onclick="sortBy(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
+      <th onclick="sortBy(this,'grupo')" style=cursor:pointer>Grupo <span class=sc></span></th>
+      <th onclick="sortBy(this,'nivel')" style="cursor:pointer;text-align:center">Nível <span class=sc></span></th>
+      <th onclick="sortBy(this,'transfer')" style="cursor:pointer;text-align:center">Movimentação <span class=sc></span><br><span class=tag>(não é gasto)</span></th></tr>
     {% set ncores = {0:'#6e7681',1:'#2f81f7',2:'#3fb950',3:'#ef6c00'} %}
     {% set nlabels = {0:'N0',1:'N1',2:'N2',3:'N3'} %}
     {% set nfull = {0:'Neutro (movimentação/receita)',1:'Comprometido (fixo/contrato)',2:'Necessário variável',3:'Discricionário'} %}
@@ -704,7 +708,19 @@ def grupos():
       .then(r=>r.json()).then(j=>{if(el)el.style.borderColor=j.ok?'var(--grn)':'var(--red)';setTimeout(()=>{if(el)el.style.borderColor='var(--ln)'},800);});}
     function sg(name,el){post(name,'grupo',el.value,el);}
     function st(name,el){post(name,'is_transfer',el.checked?1:0,null);location.reload();}
-    function sn(el,name,v){var box=el.parentNode;box.querySelectorAll('.pill').forEach(function(b){b.classList.remove('on');});el.classList.add('on');post(name,'nivel',v,null);}</script>"""
+    function sn(el,name,v){var box=el.parentNode;box.querySelectorAll('.pill').forEach(function(b){b.classList.remove('on');});el.classList.add('on');post(name,'nivel',v,null);}
+    var _sd={};
+    function sortBy(th,key){var t=document.getElementById('gtbl');var rows=Array.prototype.slice.call(t.rows,1);
+      _sd[key]=!_sd[key];var dir=_sd[key]?1:-1;
+      function val(r){if(key=='cat')return r.cells[0].textContent.trim().toLowerCase();
+        if(key=='grupo')return (r.querySelector('input[list=grps]').value||'~~~').toLowerCase();
+        if(key=='nivel'){var p=r.querySelector('.pill.on');return p?parseInt(p.textContent.replace('N','')):0;}
+        return r.querySelector('input[type=checkbox]').checked?1:0;}
+      function cat(r){return r.cells[0].textContent.trim().toLowerCase();}
+      rows.sort(function(a,b){var va=val(a),vb=val(b);if(va<vb)return -dir;if(va>vb)return dir;return cat(a)<cat(b)?-1:cat(a)>cat(b)?1:0;});
+      rows.forEach(function(r){t.appendChild(r);});
+      var hs=t.querySelectorAll('.sc');for(var i=0;i<hs.length;i++)hs[i].textContent='';
+      th.querySelector('.sc').textContent=dir>0?'▲':'▼';}</script>"""
     return render(inner, cats=cats, gs=gs)
 
 @app.route("/api/cat", methods=["POST"])
