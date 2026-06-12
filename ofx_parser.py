@@ -105,7 +105,8 @@ def reconcile(con, txns, account=None):
                         (t["fitid"], acc_id, t.get("favorecido"), cand[0]))
             matched += 1
         else:
-            cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None)
+            _d = int(t["date"][8:10]) if t.get("date") else None
+            cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None, t["cents"], _d)
             memo_u = (t.get("memo") or "").upper()
             if t["cents"] > 0 and t.get("description") == "recebido via PIX" and ("BCO DO BRASIL" in memo_u or "BANCO DO BRASIL" in memo_u):
                 cat = "Receitas"   # Pix recebido do Banco do Brasil = receita (renda entrando)

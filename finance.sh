@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS budget_alerts(
   UNIQUE(category,month,level));
 CREATE TABLE IF NOT EXISTS rules(
   id INTEGER PRIMARY KEY, field TEXT DEFAULT 'favorecido', pattern TEXT NOT NULL,
-  category TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now','localtime')));
+  category TEXT NOT NULL, amt_min INTEGER, amt_max INTEGER, dom INTEGER,
+  created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS classify_asked(tx_id INTEGER UNIQUE);
 SQL
 }
@@ -64,6 +65,11 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(transactions);" | grep -q '|favorecido|' || sq "ALTER TABLE transactions ADD COLUMN favorecido TEXT;"
   sq "PRAGMA table_info(categories);"   | grep -q '|is_transfer|' || sq "ALTER TABLE categories ADD COLUMN is_transfer INTEGER DEFAULT 0;"
   sq "PRAGMA table_info(transactions);" | grep -q '|excepcional|' || sq "ALTER TABLE transactions ADD COLUMN excepcional INTEGER DEFAULT 0;"
+  sq "PRAGMA table_info(rules);"         | grep -q '|amt_min|'    || sq "ALTER TABLE rules ADD COLUMN amt_min INTEGER;"
+  sq "PRAGMA table_info(rules);"         | grep -q '|amt_max|'    || sq "ALTER TABLE rules ADD COLUMN amt_max INTEGER;"
+  sq "PRAGMA table_info(rules);"         | grep -q '|dom|'        || sq "ALTER TABLE rules ADD COLUMN dom INTEGER;"
+  sq "PRAGMA table_info(categories);"   | grep -q '|nivel|'      || sq "ALTER TABLE categories ADD COLUMN nivel INTEGER DEFAULT 0;"
+  sq "CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY, value TEXT);"
 }
 # cláusula SQL: exclui categorias marcadas como movimentação (não-gasto/não-receita)
 NOTRANSFER="COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
@@ -272,5 +278,25 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
         GROUP BY category ORDER BY SUM(amount) ASC;"
     ;;
 
-  *) echo "uso: finance.sh {init|accounts|add|list|categorize|autocat|summary}";;
+  nivel)  # nivel "<categoria>" <1|2|3|0>  — define o nível da categoria (0=movimentação/neutro)
+    cat="${1:?uso: nivel \"categoria\" <0|1|2|3>}"; n="${2:?nivel 0-3}"
+    labels=("neutro/movimentação" "Comprometido" "Necessário variável" "Discricionário")
+    sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
+        UPDATE categories SET nivel=$n WHERE name='$(esc "$cat")';"
+    echo "OK — $cat → nível $n (${labels[$n]:-?})"
+    ;;
+
+  config)  # config [key] [valor]  — lê/escreve configurações globais (ex: salario_base em reais)
+    key="${1:-}"; val="${2:-}"
+    if [ -z "$key" ]; then
+      sq -separator '|' "SELECT key,value FROM config ORDER BY key;"
+    elif [ -z "$val" ]; then
+      sq "SELECT value FROM config WHERE key='$(esc "$key")';"
+    else
+      sq "INSERT OR REPLACE INTO config(key,value) VALUES('$(esc "$key")','$(esc "$val")');"
+      echo "OK — $key = $val"
+    fi
+    ;;
+
+  *) echo "uso: finance.sh {init|accounts|add|list|categorize|autocat|summary|nivel|config}";;
 esac
