@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS classify_asked(tx_id INTEGER UNIQUE);
 CREATE TABLE IF NOT EXISTS favorecidos(
   id INTEGER PRIMARY KEY, nome TEXT NOT NULL UNIQUE, tipo TEXT, documento TEXT,
   categoria_padrao TEXT, nivel_padrao INTEGER, notas TEXT, aliases TEXT DEFAULT '[]',
-  created_at TEXT DEFAULT (datetime('now','localtime')));
+  recorrente INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
 SQL
 }
 
@@ -72,6 +72,7 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(rules);"         | grep -q '|amt_min|'    || sq "ALTER TABLE rules ADD COLUMN amt_min INTEGER;"
   sq "PRAGMA table_info(rules);"         | grep -q '|amt_max|'    || sq "ALTER TABLE rules ADD COLUMN amt_max INTEGER;"
   sq "PRAGMA table_info(rules);"         | grep -q '|dom|'        || sq "ALTER TABLE rules ADD COLUMN dom INTEGER;"
+  sq "PRAGMA table_info(favorecidos);"   | grep -q '|recorrente|' || sq "ALTER TABLE favorecidos ADD COLUMN recorrente INTEGER DEFAULT 0;"
   sq "PRAGMA table_info(categories);"   | grep -q '|nivel|'      || sq "ALTER TABLE categories ADD COLUMN nivel INTEGER DEFAULT 0;"
   sq "CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY, value TEXT);"
 }

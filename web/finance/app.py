@@ -481,19 +481,20 @@ def favorecidos_gerir():
         try: al = json.loads(r["aliases"] or "[]")
         except Exception: al = []
         favs.append({"id": r["id"], "nome": r["nome"], "tipo": r["tipo"] or "", "documento": r["documento"] or "",
-                     "cp": r["categoria_padrao"] or "", "aliases": ", ".join(al), "usos": r["usos"]})
+                     "cp": r["categoria_padrao"] or "", "aliases": ", ".join(al), "rec": r["recorrente"] or 0, "usos": r["usos"]})
     inner = """<div class=card>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;flex:1">Favorecidos (cadastro)</h3>
       <a class=tag href="{{url_for('favorecidos')}}">← relatório</a>
       <form method=post action="{{url_for('favorecidos_aplicar')}}"><button class=btn>Aplicar (normalizar)</button></form></div>
     <p class=muted>Nome canônico do favorecido. Os <b>apelidos</b> (texto cru do extrato, separados por vírgula) são normalizados pro nome; a <b>categoria padrão</b> classifica os lançamentos automaticamente.</p>
     <datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
-    <table id=fv class=smart><tr><th>Nome</th><th data-f data-g>Tipo</th><th>Documento</th><th data-f data-g>Categoria padrão</th><th>Apelidos (vírgula)</th><th data-t=num>Uso</th><th data-nosort></th></tr>
+    <table id=fv class=smart><tr><th>Nome</th><th data-f data-g>Tipo</th><th>Documento</th><th data-f data-g>Categoria padrão</th><th data-f data-g>Recorrente</th><th>Apelidos (vírgula)</th><th data-t=num>Uso</th><th data-nosort></th></tr>
     <tr class="newrow skip">
       <td><input id=a_nome placeholder="+ novo favorecido…"></td>
       <td><select id=a_tipo>{% for t in tipos %}<option>{{t}}</option>{% endfor %}</select></td>
       <td><input id=a_doc placeholder="CPF/CNPJ"></td>
       <td><input id=a_cp list=cats placeholder="categoria"></td>
+      <td><select id=a_rec><option value=0>Não</option><option value=1>Sim</option></select></td>
       <td><input id=a_al placeholder="apelido1, apelido2"></td>
       <td></td><td><button class=addb onclick="addf()">＋</button></td></tr>
     {% for f in favs %}<tr>
@@ -501,6 +502,7 @@ def favorecidos_gerir():
       <td><select onchange="sf({{f.id}},'tipo',this)">{% for t in tipos %}<option {{'selected' if f.tipo==t}}>{{t}}</option>{% endfor %}</select></td>
       <td><input value="{{f.documento}}" onchange="sf({{f.id}},'documento',this)"></td>
       <td><input list=cats value="{{f.cp}}" onchange="sf({{f.id}},'categoria_padrao',this)"></td>
+      <td><select onchange="sf({{f.id}},'recorrente',this)"><option value=0 {{'selected' if not f.rec}}>Não</option><option value=1 {{'selected' if f.rec}}>Sim</option></select></td>
       <td><input value="{{f.aliases}}" onchange="sf({{f.id}},'aliases',this)"></td>
       <td class=tag>{{f.usos}}</td>
       <td><button class=del onclick="dlf({{f.id}})">✕</button></td></tr>{% endfor %}
@@ -514,7 +516,7 @@ def favorecidos_gerir():
       body:'field='+field+'&value='+encodeURIComponent(el.value)}).then(r=>r.json())
       .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
     function addf(){var g=i=>document.getElementById(i).value;if(!g('a_nome')){alert('Informe o nome.');return;}
-      var b=new URLSearchParams({nome:g('a_nome'),tipo:g('a_tipo'),documento:g('a_doc'),categoria_padrao:g('a_cp'),aliases:g('a_al')}).toString();
+      var b=new URLSearchParams({nome:g('a_nome'),tipo:g('a_tipo'),documento:g('a_doc'),categoria_padrao:g('a_cp'),recorrente:g('a_rec'),aliases:g('a_al')}).toString();
       fetch('/api/favorecido/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
     function dlf(id){if(!confirm('Excluir favorecido?'))return;fetch('/api/favorecido/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
     </script>"""
@@ -528,8 +530,9 @@ def api_favorecido_new():
     al = [a.strip() for a in (f.get("aliases") or "").split(",") if a.strip()]
     c = db()
     try:
-        c.execute("INSERT INTO favorecidos(nome,tipo,documento,categoria_padrao,aliases) VALUES(?,?,?,?,?)",
-                  (nome, f.get("tipo") or None, f.get("documento") or None, f.get("categoria_padrao") or None, json.dumps(al, ensure_ascii=False)))
+        c.execute("INSERT INTO favorecidos(nome,tipo,documento,categoria_padrao,recorrente,aliases) VALUES(?,?,?,?,?,?)",
+                  (nome, f.get("tipo") or None, f.get("documento") or None, f.get("categoria_padrao") or None,
+                   1 if f.get("recorrente") in ("1", "true", "on") else 0, json.dumps(al, ensure_ascii=False)))
         c.commit()
     except sqlite3.IntegrityError:
         c.close(); return {"ok": False, "err": "já existe favorecido com esse nome"}, 400
@@ -539,12 +542,14 @@ def api_favorecido_new():
 @login_required
 def api_favorecido(fid):
     field = request.form.get("field"); value = request.form.get("value", "").strip()
-    if field not in {"nome", "tipo", "documento", "categoria_padrao", "aliases", "notas"}:
+    if field not in {"nome", "tipo", "documento", "categoria_padrao", "aliases", "notas", "recorrente", "nivel_padrao"}:
         return {"ok": False, "err": "campo inválido"}, 400
     c = db()
     if field == "aliases":
         al = [a.strip() for a in value.split(",") if a.strip()]
         c.execute("UPDATE favorecidos SET aliases=? WHERE id=?", (json.dumps(al, ensure_ascii=False), fid))
+    elif field == "recorrente":
+        c.execute("UPDATE favorecidos SET recorrente=? WHERE id=?", (1 if value in ("1", "true", "on") else 0, fid))
     elif field == "nome" and not value:
         c.close(); return {"ok": False, "err": "nome não pode ficar vazio"}, 400
     else:
