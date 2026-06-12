@@ -333,10 +333,12 @@ while true; do
     voice_id=$(echo "$upd" | jq -r '.message.voice.file_id // .message.audio.file_id // empty')
     # PAPEL pelo chat_id: admin (Rodrigo) | kid (filha registrada) | desconhecido (ignora)
     if [ "$from" = "$TELEGRAM_CHAT_ID" ] || [ "$chat" = "$TELEGRAM_CHAT_ID" ]; then
-      ROLE="admin"; KIDNAME=""
+      ROLE="admin"; KIDNAME=""; FINNAME=""
     else
+      FINNAME=$(awk -v c="$from" '$1==c{print $2; exit}' "$DIR/finance_registry.txt" 2>/dev/null)
       KIDNAME=$(awk -v c="$from" '$1==c{print $2; exit}' "$DIR/kids/registry.txt" 2>/dev/null)
-      if [ -n "$KIDNAME" ]; then ROLE="kid"; else
+      if [ -n "$FINNAME" ]; then ROLE="finance"        # PIrrai-Finanças (ex.: Ayla) — escopo só finanças
+      elif [ -n "$KIDNAME" ]; then ROLE="kid"; else
         echo "[agent] IGNORADO não autorizado: from=$from chat=$chat"; continue
       fi
     fi
@@ -352,6 +354,18 @@ while true; do
     fi
     # pedido explícito de resposta falada em texto
     echo "$text" | grep -qiE 'responde.*(falando|voz|.udio)|em (.udio|voz)|manda.*(.udio)|por (.udio|voz)' && WANT_VOICE=1
+
+    # ===== CAMINHO FINANÇAS (ex.: Ayla — escopo só finanças: consultar + classificar) =====
+    if [ "$ROLE" = "finance" ]; then
+      [ -z "$text" ] && { tg "$chat" "Por enquanto eu trato só mensagens de texto sobre finanças. 😊"; continue; }
+      tg_typing "$chat"
+      ( while true; do sleep 5; tg_typing "$chat"; done ) & HBPID=$!
+      RF=$("$DIR/finance_handler.sh" "$chat" "$FINNAME" "$text" 2>>"$STATE/finance_tg.log")
+      kill "$HBPID" 2>/dev/null; wait "$HBPID" 2>/dev/null
+      tg_send_long "$chat" "$RF"
+      [ "${WANT_VOICE:-0}" = "1" ] && speak_to "$chat" "$RF"
+      continue
+    fi
 
     # ===== CAMINHO DAS FILHAS (sandbox: conversa + impressão limitada) =====
     if [ "$ROLE" = "kid" ]; then
