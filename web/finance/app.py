@@ -83,7 +83,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 .full{grid-column:1/-1}.muted{color:var(--mut)}
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
-<nav><a href="{{url_for('home')}}">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a>
+<nav><a href="{{url_for('home')}}">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a><a href="{{url_for('favorecidos')}}">Favorecidos</a>
 <a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
@@ -268,6 +268,41 @@ def financas():
     .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}</style>"""
     return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, niv_detail=niv_detail, orc=orc, maxg=maxg, totg=totg, meses=meses,
                   n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base)
+
+# ---------- relatório por favorecido ----------
+@app.route("/favorecidos")
+@login_required
+def favorecidos():
+    todos = request.args.get("todos"); mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
+    q = request.args.get("q", "").strip()
+    dest = "COALESCE(NULLIF(favorecido,''),description)"
+    where = ["amount<0", NOTRANSFER]; params = []
+    if not todos: where.append("substr(date,1,7)=?"); params.append(mes)
+    if q: where.append(f"{dest} LIKE ?"); params.append(f"%{q}%")
+    c = db()
+    rows = c.execute(f"""SELECT {dest} dest, COUNT(*) qt, -SUM(amount) total, MAX(COALESCE(category,'—')) cat
+        FROM transactions WHERE {' AND '.join(where)} GROUP BY {dest} ORDER BY -SUM(amount) DESC""", params).fetchall()
+    c.close()
+    total = sum(r["total"] for r in rows); maxv = rows[0]["total"] if rows else 1
+    inner = """<div class=card>
+    <h3 style=margin-top:0>Despesas por favorecido</h3>
+    <form class=ffil>
+      <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
+      {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}
+      <input name=q value="{{q}}" placeholder="buscar favorecido…" onkeydown="if(event.key=='Enter')this.form.submit()">
+      {% if q or todos %}<a href="{{url_for('favorecidos')}}" class=muted>limpar</a>{% endif %}
+    </form>
+    <p class=muted style=margin:4px 0 12px>{{rows|length}} favorecidos · total <b class=neg>{{total|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
+    {% if rows %}<table><tr><th>Favorecido / Estabelecimento</th><th>Categoria</th><th style=text-align:center>Qtd</th><th style=text-align:right>Total</th><th style=width:130px></th></tr>
+    {% for r in rows %}<tr>
+      <td>{{r['dest']}}</td><td class=tag>{{r['cat']}}</td>
+      <td style=text-align:center class=tag>{{r['qt']}}×</td>
+      <td style=text-align:right class=neg>{{r['total']|brl}}</td>
+      <td><div class=fbar><div class=ffill style="width:{{(r['total']/maxv*100)|round(1)}}%"></div></div></td></tr>{% endfor %}
+    </table>{% else %}<p class=muted>Nenhuma despesa no período.</p>{% endif %}</div>
+    <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}
+    .fbar{background:#0d1117;border-radius:5px;height:8px;overflow:hidden}.ffill{height:100%;background:var(--red);border-radius:5px;min-width:2px}</style>"""
+    return render(inner, rows=rows, total=total, maxv=maxv, mes=mes, todos=todos, q=q)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
