@@ -133,8 +133,9 @@ def main():
         M.store(i, "+FLAGS", "\\Seen")
     con.close(); M.logout()
     fin = os.path.join(ROOT, "finance.sh")
-    if ofx_summaries:  # classifica TODAS as transações importadas (regras + palavras-chave)
+    if ofx_summaries:  # classifica TODAS as transações importadas (regras + palavras-chave) e normaliza favorecidos
         subprocess.run([fin, "classify-all"], capture_output=True)
+        subprocess.run(["python3", os.path.join(ROOT, "finance_rules.py"), "favorecidos"], capture_output=True)
     lines = []
     if added: lines.append("🧾 <b>Novas transações (e-mail) p/ revisar:</b>\n" + "\n".join(added))
     if ofx_summaries: lines.append("🏦 <b>Extratos importados:</b>\n" + "\n".join(ofx_summaries))

@@ -65,6 +65,31 @@ def apply_rules(con):
     con.commit()
     return n
 
+def apply_favorecidos(con):
+    """normaliza o favorecido pelos apelidos da entidade e aplica a categoria_padrao. Retorna nº alterado."""
+    favs = con.execute("SELECT nome,categoria_padrao,aliases FROM favorecidos").fetchall()
+    if not favs: return 0
+    prepared = []
+    for nome, cat_padrao, aliases_json in favs:
+        try: aliases = json.loads(aliases_json or "[]")
+        except Exception: aliases = []
+        pats = [p for p in ([deburr(nome)] + [deburr(a) for a in (aliases or []) if a]) if p]
+        prepared.append((nome, cat_padrao, pats))
+    n = 0
+    for tid, fav, desc, cat in con.execute("SELECT id,favorecido,description,category FROM transactions").fetchall():
+        text = deburr((fav or "") + " " + (desc or ""))
+        for nome, cat_padrao, pats in prepared:
+            if any(p in text for p in pats):
+                sets, params = [], []
+                if (fav or "") != nome: sets.append("favorecido=?"); params.append(nome)
+                if cat_padrao and cat != cat_padrao: sets.append("category=?"); params.append(cat_padrao)
+                if sets:
+                    params.append(tid)
+                    con.execute(f"UPDATE transactions SET {', '.join(sets)} WHERE id=?", params); n += 1
+                break
+    con.commit()
+    return n
+
 def classify_all(con):
     """preenche a categoria das transações SEM categoria (regras + palavras-chave). Não sobrescreve. Retorna nº preenchido."""
     n = 0
@@ -86,4 +111,6 @@ if __name__ == "__main__":
         print(apply_rules(con))
     elif cmd == "classifyall":
         print(classify_all(con))
+    elif cmd == "favorecidos":
+        print(apply_favorecidos(con))
     con.close()

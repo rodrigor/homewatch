@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS rules(
   category TEXT NOT NULL, amt_min INTEGER, amt_max INTEGER, dom INTEGER,
   created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS classify_asked(tx_id INTEGER UNIQUE);
+CREATE TABLE IF NOT EXISTS favorecidos(
+  id INTEGER PRIMARY KEY, nome TEXT NOT NULL UNIQUE, tipo TEXT, documento TEXT,
+  categoria_padrao TEXT, nivel_padrao INTEGER, notas TEXT, aliases TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now','localtime')));
 SQL
 }
 

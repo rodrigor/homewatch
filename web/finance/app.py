@@ -285,7 +285,8 @@ def favorecidos():
     c.close()
     total = sum(r["total"] for r in rows); maxv = rows[0]["total"] if rows else 1
     inner = """<div class=card>
-    <h3 style=margin-top:0>Despesas por favorecido</h3>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por favorecido</h3>
+      <a class=tag href="{{url_for('favorecidos_gerir')}}">gerenciar favorecidos →</a></div>
     <form class=ffil>
       <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
       {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}
@@ -331,6 +332,106 @@ def favorecido_det():
     {% else %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
     <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}</style>"""
     return render(inner, nome=nome, rows=rows, tot=tot, mes=mes, todos=todos)
+
+FAV_TIPOS = ["", "pessoa", "empresa", "órgão público", "outro"]
+
+@app.route("/favorecidos/gerir")
+@login_required
+def favorecidos_gerir():
+    c = db()
+    rows = c.execute("SELECT f.*, (SELECT COUNT(*) FROM transactions WHERE favorecido=f.nome) usos FROM favorecidos f ORDER BY f.nome").fetchall()
+    cats = c.execute("SELECT name FROM categories ORDER BY name").fetchall()
+    c.close()
+    favs = []
+    for r in rows:
+        try: al = json.loads(r["aliases"] or "[]")
+        except Exception: al = []
+        favs.append({"id": r["id"], "nome": r["nome"], "tipo": r["tipo"] or "", "documento": r["documento"] or "",
+                     "cp": r["categoria_padrao"] or "", "aliases": ", ".join(al), "usos": r["usos"]})
+    inner = """<div class=card>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;flex:1">Favorecidos (cadastro)</h3>
+      <a class=tag href="{{url_for('favorecidos')}}">← relatório</a>
+      <form method=post action="{{url_for('favorecidos_aplicar')}}"><button class=btn>Aplicar (normalizar)</button></form></div>
+    <p class=muted>Nome canônico do favorecido. Os <b>apelidos</b> (texto cru do extrato, separados por vírgula) são normalizados pro nome; a <b>categoria padrão</b> classifica os lançamentos automaticamente.</p>
+    <datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
+    <table id=fv><tr><th>Nome</th><th>Tipo</th><th>Documento</th><th>Categoria padrão</th><th>Apelidos (vírgula)</th><th>Uso</th><th></th></tr>
+    <tr class=newrow>
+      <td><input id=a_nome placeholder="+ novo favorecido…"></td>
+      <td><select id=a_tipo>{% for t in tipos %}<option>{{t}}</option>{% endfor %}</select></td>
+      <td><input id=a_doc placeholder="CPF/CNPJ"></td>
+      <td><input id=a_cp list=cats placeholder="categoria"></td>
+      <td><input id=a_al placeholder="apelido1, apelido2"></td>
+      <td></td><td><button class=addb onclick="addf()">＋</button></td></tr>
+    {% for f in favs %}<tr>
+      <td><input value="{{f.nome}}" onchange="sf({{f.id}},'nome',this)"></td>
+      <td><select onchange="sf({{f.id}},'tipo',this)">{% for t in tipos %}<option {{'selected' if f.tipo==t}}>{{t}}</option>{% endfor %}</select></td>
+      <td><input value="{{f.documento}}" onchange="sf({{f.id}},'documento',this)"></td>
+      <td><input list=cats value="{{f.cp}}" onchange="sf({{f.id}},'categoria_padrao',this)"></td>
+      <td><input value="{{f.aliases}}" onchange="sf({{f.id}},'aliases',this)"></td>
+      <td class=tag>{{f.usos}}</td>
+      <td><button class=del onclick="dlf({{f.id}})">✕</button></td></tr>{% endfor %}
+    </table></div>
+    <style>#fv{font-size:13px}#fv td,#fv th{padding:6px 6px}#fv input,#fv select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+    #fv input:hover,#fv select:hover{border-color:var(--ln)}#fv input:focus,#fv select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
+    button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}tr.newrow{background:#2f81f714}</style>
+    <script>
+    function sf(id,field,el){fetch('/api/favorecido/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'field='+field+'&value='+encodeURIComponent(el.value)}).then(r=>r.json())
+      .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
+    function addf(){var g=i=>document.getElementById(i).value;if(!g('a_nome')){alert('Informe o nome.');return;}
+      var b=new URLSearchParams({nome:g('a_nome'),tipo:g('a_tipo'),documento:g('a_doc'),categoria_padrao:g('a_cp'),aliases:g('a_al')}).toString();
+      fetch('/api/favorecido/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
+    function dlf(id){if(!confirm('Excluir favorecido?'))return;fetch('/api/favorecido/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+    </script>"""
+    return render(inner, favs=favs, cats=cats, tipos=FAV_TIPOS)
+
+@app.route("/api/favorecido/new", methods=["POST"])
+@login_required
+def api_favorecido_new():
+    f = request.form; nome = (f.get("nome") or "").strip()
+    if not nome: return {"ok": False, "err": "nome obrigatório"}, 400
+    al = [a.strip() for a in (f.get("aliases") or "").split(",") if a.strip()]
+    c = db()
+    try:
+        c.execute("INSERT INTO favorecidos(nome,tipo,documento,categoria_padrao,aliases) VALUES(?,?,?,?,?)",
+                  (nome, f.get("tipo") or None, f.get("documento") or None, f.get("categoria_padrao") or None, json.dumps(al, ensure_ascii=False)))
+        c.commit()
+    except sqlite3.IntegrityError:
+        c.close(); return {"ok": False, "err": "já existe favorecido com esse nome"}, 400
+    c.close(); return {"ok": True}
+
+@app.route("/api/favorecido/<int:fid>", methods=["POST"])
+@login_required
+def api_favorecido(fid):
+    field = request.form.get("field"); value = request.form.get("value", "").strip()
+    if field not in {"nome", "tipo", "documento", "categoria_padrao", "aliases", "notas"}:
+        return {"ok": False, "err": "campo inválido"}, 400
+    c = db()
+    if field == "aliases":
+        al = [a.strip() for a in value.split(",") if a.strip()]
+        c.execute("UPDATE favorecidos SET aliases=? WHERE id=?", (json.dumps(al, ensure_ascii=False), fid))
+    elif field == "nome" and not value:
+        c.close(); return {"ok": False, "err": "nome não pode ficar vazio"}, 400
+    else:
+        try:
+            c.execute(f"UPDATE favorecidos SET {field}=? WHERE id=?", (value or None, fid))
+        except sqlite3.IntegrityError:
+            c.close(); return {"ok": False, "err": "nome duplicado"}, 400
+    c.commit(); c.close(); return {"ok": True}
+
+@app.route("/api/favorecido/<int:fid>/delete", methods=["POST"])
+@login_required
+def api_favorecido_del(fid):
+    c = db(); c.execute("DELETE FROM favorecidos WHERE id=?", (fid,)); c.commit(); c.close()
+    return {"ok": True}
+
+@app.route("/favorecidos/aplicar", methods=["POST"])
+@login_required
+def favorecidos_aplicar():
+    c = db(); n = finance_rules.apply_favorecidos(c); c.close()
+    flash(f"Normalização aplicada: {n} lançamento(s) atualizados.")
+    return redirect(url_for("favorecidos_gerir"))
 
 # ---------- listagem ----------
 @app.route("/transacoes")
@@ -888,6 +989,7 @@ def conciliacao():
         c.close()
         fin = os.path.join(ROOT, "finance.sh")
         subprocess.run([fin, "classify-all"], capture_output=True)   # classifica todas
+        subprocess.run(["python3", os.path.join(ROOT, "finance_rules.py"), "favorecidos"], capture_output=True)  # normaliza favorecidos
         subprocess.run([fin, "ask-pending"], capture_output=True)    # pergunta o que não reconheceu
         return redirect(url_for("conciliacao"))
     last = c.execute("SELECT * FROM ofx_imports ORDER BY id DESC LIMIT 6").fetchall()
