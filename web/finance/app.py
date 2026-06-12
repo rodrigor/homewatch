@@ -295,7 +295,7 @@ def favorecidos():
     <p class=muted style=margin:4px 0 12px>{{rows|length}} favorecidos · total <b class=neg>{{total|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
     {% if rows %}<table><tr><th>Favorecido / Estabelecimento</th><th>Categoria</th><th style=text-align:center>Qtd</th><th style=text-align:right>Total</th><th style=width:130px></th></tr>
     {% for r in rows %}<tr>
-      <td>{{r['dest']}}</td><td class=tag>{{r['cat']}}</td>
+      <td><a href="{{url_for('favorecido_det', nome=r['dest'], mes=mes, todos=todos)}}">{{r['dest']}}</a></td><td class=tag>{{r['cat']}}</td>
       <td style=text-align:center class=tag>{{r['qt']}}×</td>
       <td style=text-align:right class=neg>{{r['total']|brl}}</td>
       <td><div class=fbar><div class=ffill style="width:{{(r['total']/maxv*100)|round(1)}}%"></div></div></td></tr>{% endfor %}
@@ -303,6 +303,34 @@ def favorecidos():
     <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}
     .fbar{background:#0d1117;border-radius:5px;height:8px;overflow:hidden}.ffill{height:100%;background:var(--red);border-radius:5px;min-width:2px}</style>"""
     return render(inner, rows=rows, total=total, maxv=maxv, mes=mes, todos=todos, q=q)
+
+@app.route("/favorecido")
+@login_required
+def favorecido_det():
+    nome = request.args.get("nome", "")
+    todos = request.args.get("todos"); mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
+    dest = "COALESCE(NULLIF(favorecido,''),description)"
+    where = [f"{dest}=?"]; params = [nome]
+    if not todos: where.append("substr(date,1,7)=?"); params.append(mes)
+    c = db()
+    rows = c.execute(f"""SELECT t.*, a.name acc FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
+        WHERE {' AND '.join(where)} ORDER BY t.date DESC, t.id DESC""", params).fetchall()
+    c.close()
+    tot = sum(r["amount"] for r in rows)
+    inner = """<div class=card>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <a href="{{url_for('favorecidos')}}" class=muted>← favorecidos</a>
+      <h3 style="margin:0">{{nome}}</h3></div>
+    <form class=ffil><input type=hidden name=nome value="{{nome}}">
+      <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
+      {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}</form>
+    <p class=muted style=margin:4px 0 12px>{{rows|length}} lançamentos · total <b class="{{'pos' if tot>0 else 'neg'}}">{{tot|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
+    {% if rows %}<table><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th style=text-align:right>Valor</th></tr>
+    {% for r in rows %}<tr><td>{{r['date']}}</td><td>{{r['description'] or '—'}}</td><td class=tag>{{r['category'] or '—'}}</td><td class=tag>{{r['acc'] or '—'}}</td>
+      <td style=text-align:right class="{{'pos' if r['amount']>0 else 'neg'}}">{{r['amount']|brl}}</td></tr>{% endfor %}</table>
+    {% else %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
+    <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}</style>"""
+    return render(inner, nome=nome, rows=rows, tot=tot, mes=mes, todos=todos)
 
 # ---------- listagem ----------
 @app.route("/transacoes")
