@@ -151,10 +151,23 @@ def financas():
         GROUP BY cat.nivel ORDER BY cat.nivel""", (mes,)).fetchall()
     nivel_map = {r["niv"]: r["total"] for r in nivel_rows}
     n1 = nivel_map.get(1, 0); n2 = nivel_map.get(2, 0); n3 = nivel_map.get(3, 0); n0 = nivel_map.get(0, 0)
+    niv_cat_rows = c.execute("""
+        SELECT COALESCE(cat.nivel,0) niv, COALESCE(NULLIF(t.category,''),'(sem categoria)') cat, -SUM(t.amount) v
+        FROM transactions t LEFT JOIN categories cat ON cat.name=t.category
+        WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
+        GROUP BY cat.nivel, t.category ORDER BY cat.nivel, v DESC""", (mes,)).fetchall()
     obrigatorio = n1 + n2
     cfg_sal = c.execute("SELECT value FROM config WHERE key='salario_base'").fetchone()
     salario_base = int(cfg_sal[0]) if cfg_sal else 0
     c.close()
+    NIV_LABEL = {1: "N1 · Comprometido", 2: "N2 · Necessário variável", 3: "N3 · Discricionário", 0: "N0 · Sem nível"}
+    NIV_COLOR = {1: "#2f81f7", 2: "#3fb950", 3: "#ef6c00", 0: "#6e7681"}
+    niv_detail = []
+    for lv in (1, 2, 3, 0):
+        items = [(r["cat"], r["v"]) for r in niv_cat_rows if r["niv"] == lv]
+        if items:
+            niv_detail.append({"label": NIV_LABEL[lv], "color": NIV_COLOR[lv],
+                               "total": sum(v for _, v in items), "items": items})
     MESN = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
     mm = list(reversed(meses_raw))
     maxm = max([max(r["rec"] + r["exc"], r["receita"]) for r in mm], default=1) or 1
@@ -236,9 +249,14 @@ def financas():
       <div class=gl>{{r['cat']}}</div>
       <div class=gt><div class=gf style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
       <div class=gv>{{r['spent']|brl}}/{{r['lim']|brl}} <span class=tag>{{p}}%</span></div></div>{% endfor %}</div>{% endif %}
-    {% if cats %}<div class=card><h3 style=margin-top:0>Detalhe por categoria</h3>
-    <table><tr><th>Categoria</th><th style=text-align:right>Gasto</th></tr>
-    {% for r in cats %}<tr><td>{{r['cat']}}</td><td style=text-align:right class=neg>{{r['v']|brl}}</td></tr>{% endfor %}</table></div>{% endif %}
+    {% if niv_detail %}<div class=card><h3 style=margin-top:0>Detalhe por essencialidade</h3>
+    {% for nv in niv_detail %}
+    <div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px">
+      <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:{{nv.color}}"></span>
+      <b style="color:{{nv.color}}">{{nv.label}}</b>
+      <b style="margin-left:auto" class=neg>{{nv.total|brl}}</b></div>
+    <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td>{{cat}}</td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
+    {% endfor %}</div>{% endif %}
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
     .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}
@@ -248,7 +266,7 @@ def financas():
     .mbar{display:flex;flex-direction:column;justify-content:flex-end;width:18px}
     .mbar>div{border-radius:3px 3px 0 0;min-height:2px}
     .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}</style>"""
-    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, cats=cats, orc=orc, maxg=maxg, totg=totg, meses=meses,
+    return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, niv_detail=niv_detail, orc=orc, maxg=maxg, totg=totg, meses=meses,
                   n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base)
 
 # ---------- listagem ----------
