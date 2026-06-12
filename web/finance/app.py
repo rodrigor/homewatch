@@ -84,7 +84,7 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 </style></head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="{{url_for('home')}}">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a><a href="{{url_for('favorecidos')}}">Favorecidos</a>
-<a href="{{url_for('nova')}}">+ Lançar</a><a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
+<a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
@@ -986,7 +986,7 @@ def grupos():
     {% set ncores = {0:'#6e7681',1:'#2f81f7',2:'#3fb950',3:'#ef6c00'} %}
     {% set nlabels = {0:'N0',1:'N1',2:'N2',3:'N3'} %}
     {% set nfull = {0:'Neutro (movimentação/receita)',1:'Comprometido (fixo/contrato)',2:'Necessário variável',3:'Discricionário'} %}
-    {% for c in cats %}<tr><td>{{c['icon']}} {{c['name']}}</td>
+    {% for c in cats %}<tr><td>{{c['name']}}</td>
       <td><input list=grps value="{{c['grupo'] or ''}}" placeholder="(sem grupo)" {{'disabled' if c['is_transfer']}}
         onchange="sg('{{c['name']}}',this)" style="width:100%;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td>
       <td style=text-align:center><span class=pills>
