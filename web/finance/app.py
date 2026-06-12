@@ -71,8 +71,8 @@ a{color:var(--acc);text-decoration:none}.wrap{max-width:980px;margin:0 auto;padd
 header{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--ln);padding:14px 18px;background:var(--card)}
 header b{font-size:18px}header nav{display:flex;gap:14px;margin-left:auto;align-items:center}
 .card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:16px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
-.kpi .v{font-size:24px;font-weight:700}.kpi .l{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:12px;margin-bottom:18px}
+.kpi .v{font-size:19px;font-weight:700;white-space:nowrap;letter-spacing:-.3px}.kpi .l{color:var(--mut);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--ln)}
 th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .neg{color:var(--red)}.pos{color:var(--grn)}.tag{font-size:12px;color:var(--mut)}
@@ -297,7 +297,15 @@ def transacoes():
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if f_conta or f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes)}}" class=muted>limpar</a>{% endif %}
     </form>
-    <table id=tx><tr><th class=dt>Data</th><th>Descrição</th><th>Favorecido</th><th>Categoria</th><th>Conta</th><th class=st>Status</th><th class=vl style=text-align:right>Valor (R$)</th><th title="despesa fora do normal" style=text-align:center>❗</th><th></th></tr>
+    <table id=tx><tr>
+      <th class=dt onclick="txsort(this,'data')" style=cursor:pointer>Data <span class=sc></span></th>
+      <th onclick="txsort(this,'desc')" style=cursor:pointer>Descrição <span class=sc></span></th>
+      <th onclick="txsort(this,'fav')" style=cursor:pointer>Favorecido <span class=sc></span></th>
+      <th onclick="txsort(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
+      <th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>
+      <th class=st onclick="txsort(this,'status')" style="cursor:pointer;text-align:center">Status <span class=sc></span></th>
+      <th class=vl onclick="txsort(this,'valor')" style="cursor:pointer;text-align:right">Valor (R$) <span class=sc></span></th>
+      <th title="despesa fora do normal" style=text-align:center>❗</th><th></th></tr>
     <tr class=newrow>
       <td><input type=datetime-local id=n_date class=dt></td>
       <td><input id=n_desc placeholder="+ nova transação…"></td>
@@ -308,7 +316,7 @@ def transacoes():
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
       <td></td>
       <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
-    {% for r in rows %}<tr class="st-{{r['status']}}">
+    {% for r in rows %}<tr class="drow st-{{r['status']}}">
       <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
       <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
       <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
@@ -322,7 +330,7 @@ def transacoes():
         onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
       <td style=text-align:center><input type=checkbox {{'checked' if r['excepcional']}} onchange="sx({{r['id']}},this)" title="despesa fora do normal"></td>
       <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
-    {% if rows %}<tr><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
+    {% if rows %}<tr class=totrow><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
       <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td><td></td></tr>{% endif %}</table>
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
     <div class=slegend>Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}</div></div>
@@ -354,6 +362,21 @@ def transacoes():
         category:g('n_cat'),account_id:g('n_acc'),status:g('n_status'),valor:g('n_val')}).toString();
       fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
       .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
+    var _td={};
+    function txsort(th,key){var t=document.getElementById('tx');var rows=Array.prototype.slice.call(t.querySelectorAll('tr.drow'));
+      _td[key]=!_td[key];var dir=_td[key]?1:-1;
+      function val(r){if(key=='data')return r.querySelector('input[type=datetime-local]').value;
+        if(key=='desc')return r.cells[1].querySelector('input').value.toLowerCase();
+        if(key=='fav')return r.cells[2].querySelector('input').value.toLowerCase();
+        if(key=='cat')return (r.cells[3].querySelector('select').value||'~~~').toLowerCase();
+        if(key=='conta'){var s=r.cells[4].querySelector('select');return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
+        if(key=='status')return r.cells[5].querySelector('select').value;
+        if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.replace(/\./g,'').replace(',','.'))||0;}
+        return '';}
+      rows.sort(function(a,b){var va=val(a),vb=val(b);return va<vb?-dir:va>vb?dir:0;});
+      var total=t.querySelector('tr.totrow');rows.forEach(function(r){t.insertBefore(r,total);});
+      var hs=t.querySelectorAll('.sc');for(var i=0;i<hs.length;i++)hs[i].textContent='';
+      th.querySelector('.sc').textContent=dir>0?'▲':'▼';}
     </script>"""
     return render(inner, mes=mes, rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
                   statuses=STATUSES, glyph=STATUS_GLYPH,
