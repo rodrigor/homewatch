@@ -289,6 +289,7 @@ def financas():
     obrigatorio = n1 + n2
     cfg_sal = c.execute("SELECT value FROM config WHERE key='salario_base'").fetchone()
     salario_base = int(cfg_sal[0]) if cfg_sal else 0
+    acolor = {a["id"]: (a["color"] or "#888") for a in c.execute("SELECT id,color FROM accounts").fetchall()}
     c.close()
     NIV_LABEL = {1: "N1 · Comprometido", 2: "N2 · Necessário variável", 3: "N3 · Discricionário", 0: "N0 · Sem nível"}
     NIV_COLOR = {1: "#2f81f7", 2: "#3fb950", 3: "#ef6c00", 0: "#6e7681"}
@@ -385,7 +386,7 @@ def financas():
       <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:{{nv.color}}"></span>
       <b style="color:{{nv.color}}">{{nv.label}}</b>
       <b style="margin-left:auto" class=neg>{{nv.total|brl}}</b></div>
-    <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td>{{cat}}</td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
+    <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td><span class=catlink data-cat="{{cat}}" onclick="openCat(this)" title="ver transações">{{cat}}</span></td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
     {% endfor %}</div>{% endif %}
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
     .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
@@ -395,9 +396,58 @@ def financas():
     .mbars{display:flex;align-items:flex-end;gap:3px}
     .mbar{display:flex;flex-direction:column;justify-content:flex-end;width:18px}
     .mbar>div{border-radius:3px 3px 0 0;min-height:2px}
-    .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}</style>"""
+    .mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}
+    .catlink{cursor:pointer;border-bottom:1px dashed var(--mut)}.catlink:hover{color:var(--acc);border-color:var(--acc)}
+    .modal{display:none;position:fixed;inset:0;background:#000a;z-index:50;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+    .modal.on{display:flex}
+    .modalbox{background:var(--card,#1a2230);border:1px solid var(--ln);border-radius:14px;max-width:1040px;width:100%;box-shadow:0 20px 60px #000a}
+    .modalhd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--ln);position:sticky;top:0;background:var(--card,#1a2230);border-radius:14px 14px 0 0}
+    .modalhd b{flex:1}.mclose{background:transparent;border:0;color:var(--mut);font-size:18px;cursor:pointer}.mclose:hover{color:var(--red)}
+    .modalbody{padding:10px 18px 18px;overflow-x:auto}</style>
+    <div id=catmodal class=modal onclick="if(event.target==this)closeCat()">
+      <div class=modalbox>
+        <div class=modalhd><b id=catttl></b><button class=mclose onclick=closeCat() title=fechar>✕</button></div>
+        <div id=catbody class=modalbody></div>
+      </div></div>
+    <script>
+    function openCat(el){var cat=el.dataset.cat;
+      document.getElementById('catttl').textContent='Transações · '+cat+' · {{mes}}';
+      document.getElementById('catbody').innerHTML='<p class=muted>Carregando…</p>';
+      document.getElementById('catmodal').classList.add('on');
+      fetch('/api/cat_tx?mes={{mes}}&cat='+encodeURIComponent(cat))
+        .then(function(r){return r.text();}).then(function(h){document.getElementById('catbody').innerHTML=h;})
+        .catch(function(){document.getElementById('catbody').innerHTML='<p class=neg>Erro ao carregar.</p>';});}
+    function closeCat(){document.getElementById('catmodal').classList.remove('on');}
+    document.addEventListener('keydown',function(e){if(e.key=='Escape')closeCat();});
+    </script>""" + TX_JS
     return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, niv_detail=niv_detail, orc=orc, maxg=maxg, totg=totg, meses=meses,
-                  n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base)
+                  n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base,
+                  acolor=acolor)
+
+# ---------- transações de uma categoria (modal do Resumo) ----------
+@app.route("/api/cat_tx")
+@login_required
+def api_cat_tx():
+    cat = request.args.get("cat", "")
+    mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
+    c = db()
+    base = """SELECT t.*, a.name acc FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
+              WHERE {w} AND substr(t.date,1,7)=? ORDER BY t.date DESC, t.id DESC"""
+    if cat in ("(sem categoria)", "—", ""):
+        rows = c.execute(base.format(w="(t.category IS NULL OR t.category='')"), (mes,)).fetchall()
+    else:
+        rows = c.execute(base.format(w="COALESCE(t.category,'')=?"), (cat, mes)).fetchall()
+    accs = c.execute("SELECT id,name,color FROM accounts ORDER BY name").fetchall()
+    cat_rows = c.execute("SELECT name, COALESCE(NULLIF(grupo,''),'(sem grupo)') g FROM categories ORDER BY g, name").fetchall()
+    tot = sum(r["amount"] for r in rows); c.close()
+    cat_groups = {}
+    for r in cat_rows: cat_groups.setdefault(r["g"], []).append(r["name"])
+    acolor = {a["id"]: (a["color"] or "#888") for a in accs}
+    if not rows:
+        return "<p class=muted>Nenhuma transação nesta categoria no mês.</p>"
+    return render_template_string("<table class=txtbl>" + TX_HEAD + TX_ROWS + TX_TOTAL + "</table>",
+                                  rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
+                                  statuses=STATUSES, glyph=STATUS_GLYPH, tot=tot)
 
 # ---------- relatório por favorecido ----------
 @app.route("/favorecidos")
