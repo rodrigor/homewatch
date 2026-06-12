@@ -24,7 +24,8 @@ def _split_memo(memo):
         desc, low = parts[0], parts[0].lower()
         if "pix" in low and "enviad" in low: desc = "enviado via PIX"
         elif "pix" in low and "recebid" in low: desc = "recebido via PIX"
-        return desc, parts[1]
+        fav = re.sub(r"\s*\(transfer[êe]ncia[^)]*\)\s*$", "", parts[1], flags=re.I).strip()
+        return desc, (fav or parts[1])
     return memo, None
 
 def parse(text):
