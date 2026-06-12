@@ -106,6 +106,9 @@ def reconcile(con, txns, account=None):
             matched += 1
         else:
             cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None)
+            memo_u = (t.get("memo") or "").upper()
+            if t["cents"] > 0 and t.get("description") == "recebido via PIX" and ("BCO DO BRASIL" in memo_u or "BANCO DO BRASIL" in memo_u):
+                cat = "Receitas"   # Pix recebido do Banco do Brasil = receita (renda entrando)
             con.execute("""INSERT INTO transactions(date,time,amount,description,favorecido,category,account_id,source,status,external_id,notes)
                            VALUES(?,?,?,?,?,?,?,'ofx','importado',?,?)""",
                         (t["date"], t.get("time"), t["cents"], t.get("description"), t.get("favorecido"), cat, acc_id, t["fitid"], t.get("memo")))
