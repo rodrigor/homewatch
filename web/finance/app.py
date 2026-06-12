@@ -90,6 +90,73 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
 {% block body %}{% endblock %}</div></body></html>"""
 
+# ---------- smart-table: componente reutilizável (sort + filtros + agrupar/subtotais + CSV) ----------
+SMART = r"""<style>
+.smartbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+.smartbar input,.smartbar select{font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--ln);background:#0d1117;color:var(--ink)}
+.smartbar .btn{padding:7px 12px}
+table.smart th .sc{color:var(--acc);font-size:11px;margin-left:2px}
+table.smart tr.grouphdr td{background:#0d1117}table.smart tr.smarttot td{border-top:2px solid var(--ln)}
+</style>
+<script>
+(function(){
+function num(v){v=(''+(v||'')).replace(/[^0-9.,-]/g,'').split('.').join('').replace(',','.');var n=parseFloat(v);return isNaN(n)?0:n;}
+function txt(td){if(!td)return '';var e=td.querySelector('input,select');if(e){if(e.tagName=='SELECT'){var o=e.options[e.selectedIndex];return o?o.text:e.value;}return e.value;}return td.textContent.trim();}
+function fmt(n){return 'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function init(t){
+  var head=t.rows[0];if(!head)return;var cols=[],sumc=null,k;
+  for(k=0;k<head.cells.length;k++){var th=head.cells[k];
+    var c={i:k,type:th.getAttribute('data-t')||'text',f:th.hasAttribute('data-f'),g:th.hasAttribute('data-g'),sum:th.hasAttribute('data-sum'),nos:th.hasAttribute('data-nosort'),label:th.textContent.trim()};
+    cols.push(c);if(c.sum)sumc=c;}
+  function cval(r,c){var v=txt(r.cells[c.i]);return c.type=='num'?num(v):v;}
+  var src=[];for(k=1;k<t.rows.length;k++){var tr=t.rows[k];if(!tr.classList.contains('skip'))src.push(tr);}
+  src.forEach(function(r){r.parentNode.removeChild(r);});
+  var st={s:-1,d:1,g:-1,fl:{},q:''};
+  var bar=document.createElement('div');bar.className='smartbar';
+  var qi=document.createElement('input');qi.placeholder='buscar…';qi.oninput=function(){st.q=qi.value.toLowerCase();render();};bar.appendChild(qi);
+  cols.forEach(function(c){if(!c.f)return;var seen={},opts=[];src.forEach(function(r){var v=cval(r,c);if(!(v in seen)){seen[v]=1;opts.push(v);}});
+    opts.sort();var s=document.createElement('select');var h='<option value="">'+esc(c.label)+': todos</option>';
+    opts.forEach(function(v){h+='<option>'+esc(v)+'</option>';});s.innerHTML=h;
+    s.onchange=function(){st.fl[c.i]=s.value;render();};bar.appendChild(s);});
+  var gables=cols.filter(function(c){return c.g;});
+  if(gables.length){var gs=document.createElement('select');var gh='<option value="-1">agrupar: —</option>';
+    gables.forEach(function(c){gh+='<option value="'+c.i+'">agrupar: '+esc(c.label)+'</option>';});gs.innerHTML=gh;
+    gs.onchange=function(){st.g=parseInt(gs.value);render();};bar.appendChild(gs);}
+  var cbt=document.createElement('button');cbt.type='button';cbt.textContent='CSV';cbt.className='btn';cbt.onclick=expCsv;bar.appendChild(cbt);
+  t.parentNode.insertBefore(bar,t);
+  cols.forEach(function(c){if(c.nos)return;var th=head.cells[c.i];th.style.cursor='pointer';
+    var sp=document.createElement('span');sp.className='sc';th.appendChild(sp);c.sp=sp;
+    th.onclick=function(){st.d=(st.s==c.i?-st.d:1);st.s=c.i;render();};});
+  function filt(){return src.filter(function(r){
+    if(st.q){var ok=false;for(var j=0;j<cols.length;j++){if((''+txt(r.cells[cols[j].i])).toLowerCase().indexOf(st.q)>=0){ok=true;break;}}if(!ok)return false;}
+    for(var key in st.fl){if(st.fl[key]&&(''+cval(r,cols[key]))!==st.fl[key])return false;}return true;});}
+  function clr(){var rm=t.querySelectorAll('tr.srow,tr.grouphdr,tr.smarttot');for(var j=rm.length-1;j>=0;j--)rm[j].parentNode.removeChild(rm[j]);}
+  function render(){var rows=filt();var sc=st.s>=0?cols[st.s]:null;
+    if(sc)rows.sort(function(a,b){var x=cval(a,sc),y=cval(b,sc);return (x<y?-1:x>y?1:0)*st.d;});
+    clr();
+    if(st.g>=0){var gc=cols[st.g];
+      rows.sort(function(a,b){var x=cval(a,gc),y=cval(b,gc);if(x<y)return -1;if(x>y)return 1;return sc?((cval(a,sc)<cval(b,sc)?-1:cval(a,sc)>cval(b,sc)?1:0)*st.d):0;});
+      var cur=null,hdr=null,sub=0,cnt=0,first=true;
+      rows.forEach(function(r){var gv=cval(r,gc);
+        if(first||gv!==cur){if(hdr)fill(hdr,sub,cnt);cur=gv;sub=0;cnt=0;first=false;hdr=document.createElement('tr');hdr.className='grouphdr';hdr._gv=gv;t.appendChild(hdr);}
+        if(sumc)sub+=cval(r,sumc);cnt++;r.className='srow';t.appendChild(r);});
+      if(hdr)fill(hdr,sub,cnt);}
+    else rows.forEach(function(r){r.className='srow';t.appendChild(r);});
+    var trf=document.createElement('tr');trf.className='smarttot';var tot=0;if(sumc)rows.forEach(function(r){tot+=cval(r,sumc);});
+    var hh='';cols.forEach(function(c){if(c.i==0)hh+='<td class=muted>'+rows.length+' itens</td>';else if(c.sum)hh+='<td style=text-align:right><b>'+fmt(tot)+'</b></td>';else hh+='<td></td>';});
+    trf.innerHTML=hh;t.appendChild(trf);
+    cols.forEach(function(c){if(c.sp)c.sp.textContent=(st.s==c.i?(st.d>0?'▲':'▼'):'');});}
+  function fill(hdr,sub,cnt){hdr.innerHTML='<td colspan="'+cols.length+'"><b>'+esc(hdr._gv||'—')+'</b> <span class=tag>'+cnt+' itens'+(sumc?' · '+fmt(sub):'')+'</span></td>';}
+  function expCsv(){var rows=filt();var L=[cols.map(function(c){return '"'+c.label+'"';}).join(',')];
+    rows.forEach(function(r){L.push(cols.map(function(c){return '"'+(''+txt(r.cells[c.i])).replace(/"/g,'""')+'"';}).join(','));});
+    var b=new Blob([L.join('\n')],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='listagem.csv';a.click();}
+  render();}
+document.addEventListener('DOMContentLoaded',function(){var ts=document.querySelectorAll('table.smart');for(var k=0;k<ts.length;k++)init(ts[k]);});
+})();
+</script>"""
+BASE = BASE.replace("</body>", SMART + "</body>")
+
 # monta a página injetando o corpo no template base (sem depender de extends por arquivo)
 def render(inner, **ctx):
     full = BASE.replace("{% block body %}{% endblock %}", inner)
@@ -294,7 +361,7 @@ def favorecidos():
       {% if q or todos %}<a href="{{url_for('favorecidos')}}" class=muted>limpar</a>{% endif %}
     </form>
     <p class=muted style=margin:4px 0 12px>{{rows|length}} favorecidos · total <b class=neg>{{total|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
-    {% if rows %}<table><tr><th>Favorecido / Estabelecimento</th><th>Categoria</th><th style=text-align:center>Qtd</th><th style=text-align:right>Total</th><th style=width:130px></th></tr>
+    {% if rows %}<table class=smart><tr><th>Favorecido / Estabelecimento</th><th data-f data-g>Categoria</th><th data-t=num style=text-align:center>Qtd</th><th data-t=num data-sum style=text-align:right>Total</th><th data-nosort style=width:130px></th></tr>
     {% for r in rows %}<tr>
       <td><a href="{{url_for('favorecido_det', nome=r['dest'], mes=mes, todos=todos)}}">{{r['dest']}}</a></td><td class=tag>{{r['cat']}}</td>
       <td style=text-align:center class=tag>{{r['qt']}}×</td>
@@ -326,7 +393,7 @@ def favorecido_det():
       <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
       {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}</form>
     <p class=muted style=margin:4px 0 12px>{{rows|length}} lançamentos · total <b class="{{'pos' if tot>0 else 'neg'}}">{{tot|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
-    {% if rows %}<table><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th style=text-align:right>Valor</th></tr>
+    {% if rows %}<table class=smart><tr><th data-t=date>Data</th><th>Descrição</th><th data-f data-g>Categoria</th><th data-f data-g>Conta</th><th data-t=num data-sum style=text-align:right>Valor</th></tr>
     {% for r in rows %}<tr><td>{{r['date']}}</td><td>{{r['description'] or '—'}}</td><td class=tag>{{r['category'] or '—'}}</td><td class=tag>{{r['acc'] or '—'}}</td>
       <td style=text-align:right class="{{'pos' if r['amount']>0 else 'neg'}}">{{r['amount']|brl}}</td></tr>{% endfor %}</table>
     {% else %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
@@ -354,8 +421,8 @@ def favorecidos_gerir():
       <form method=post action="{{url_for('favorecidos_aplicar')}}"><button class=btn>Aplicar (normalizar)</button></form></div>
     <p class=muted>Nome canônico do favorecido. Os <b>apelidos</b> (texto cru do extrato, separados por vírgula) são normalizados pro nome; a <b>categoria padrão</b> classifica os lançamentos automaticamente.</p>
     <datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
-    <table id=fv><tr><th>Nome</th><th>Tipo</th><th>Documento</th><th>Categoria padrão</th><th>Apelidos (vírgula)</th><th>Uso</th><th></th></tr>
-    <tr class=newrow>
+    <table id=fv class=smart><tr><th>Nome</th><th data-f data-g>Tipo</th><th>Documento</th><th data-f data-g>Categoria padrão</th><th>Apelidos (vírgula)</th><th data-t=num>Uso</th><th data-nosort></th></tr>
+    <tr class="newrow skip">
       <td><input id=a_nome placeholder="+ novo favorecido…"></td>
       <td><select id=a_tipo>{% for t in tipos %}<option>{{t}}</option>{% endfor %}</select></td>
       <td><input id=a_doc placeholder="CPF/CNPJ"></td>
@@ -690,8 +757,8 @@ def regras():
       <form method=post action="{{url_for('regras_aplicar')}}"><button class=btn>Aplicar às transações</button></form></div>
     <p class=muted>Quando o campo escolhido <b>contém</b> o texto, a transação recebe a categoria. Ex.: <i>Favorecido</i> contém <i>Joane</i> → <i>Doméstica</i>. As regras valem para lançamentos novos e extratos importados; o botão acima reaplica nas transações já existentes.</p>
     <datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
-    <table id=rl><tr><th>Quando o campo</th><th>contém</th><th>→ categoria</th><th></th></tr>
-    <tr class=newrow>
+    <table id=rl class=smart><tr><th data-f data-g>Quando o campo</th><th>contém</th><th data-f data-g>→ categoria</th><th data-nosort></th></tr>
+    <tr class="newrow skip">
       <td><select id=r_field>{% for v,lbl in fields %}<option value="{{v}}">{{lbl}}</option>{% endfor %}</select></td>
       <td><input id=r_pat placeholder="ex: Joane"></td>
       <td><input id=r_cat list=cats placeholder="ex: Doméstica"></td>
@@ -771,7 +838,7 @@ def limites():
     inner = """<div class=card style=max-width:680px>
     <h3 style=margin-top:0>Limites mensais por categoria</h3>
     <p class=muted>Defina quanto pretende gastar por mês em cada categoria. Quando o gasto do mês chegar a <b>80%</b> e a <b>100%</b>, você recebe um alerta no Telegram. Deixe em branco pra não ter limite.</p>
-    <table><tr><th>Categoria</th><th style=width:130px>Limite (R$)</th><th>Mês atual</th></tr>
+    <table class=smart><tr><th data-g>Categoria</th><th data-t=num style=width:130px>Limite (R$)</th><th data-nosort>Mês atual</th></tr>
     {% for r in rows %}<tr>
       <td>{{r['icon']}} {{r['name']}}</td>
       <td><input value="{{ r['lim']|reais_plain if r['lim'] else '' }}" placeholder="—" onchange="sl('{{r['name']}}',this)"
@@ -817,8 +884,8 @@ def contas():
     inner = """<div class=card>
     <h3 style=margin-top:0>Contas</h3>
     <p class=muted>Cadastre suas contas (banco, número). Extratos OFX criam/atualizam a conta sozinhos pelo número. Use a primeira linha pra adicionar.</p>
-    <table id=acc><tr><th>Nome</th><th>Banco</th><th>Número</th><th>Tipo</th><th>Cor</th><th>Uso</th><th></th></tr>
-    <tr class=newrow>
+    <table id=acc class=smart><tr><th>Nome</th><th data-f data-g>Banco</th><th>Número</th><th data-f data-g>Tipo</th><th data-nosort>Cor</th><th data-t=num>Uso</th><th data-nosort></th></tr>
+    <tr class="newrow skip">
       <td><input id=a_name placeholder="+ nova conta…"></td>
       <td><input id=a_bank placeholder="banco"></td>
       <td><input id=a_num placeholder="número"></td>
@@ -1006,7 +1073,7 @@ def conciliacao():
         {% if nimp %}<div class=tag><a href="{{url_for('transacoes',status='importado')}}">revisar →</a></div>{% endif %}</div>
       <div class="card kpi"><div class=l>Conciliadas</div><div class="v pos">{{ncon}}</div></div></div>
     {% if last %}<div class=card style=margin-top:16px><h3 style=margin-top:0>Importações recentes</h3>
-    <table><tr><th>Arquivo</th><th>Quando</th><th>Conciliadas</th><th>Novas</th></tr>
+    <table class=smart><tr><th>Arquivo</th><th data-t=date>Quando</th><th data-t=num>Conciliadas</th><th data-t=num>Novas</th></tr>
     {% for r in last %}<tr><td>{{r['filename']}}</td><td class=tag>{{r['imported_at']}}</td>
     <td>{{r['matched']}}</td><td>{{r['unmatched']}}</td></tr>{% endfor %}</table></div>{% endif %}"""
     return render(inner, last=last, nimp=nimp, ncon=ncon)
