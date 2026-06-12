@@ -157,6 +157,69 @@ document.addEventListener('DOMContentLoaded',function(){var ts=document.querySel
 </script>"""
 BASE = BASE.replace("</body>", SMART + "</body>")
 
+# ---------- componente de listagem de TRANSAÇÕES (colunas padrão + edição inline + ✎/❗/✕) ----------
+TX_HEAD = """<tr>
+  <th class=dt onclick="txsort(this,'data')" style=cursor:pointer>Data <span class=sc></span></th>
+  <th onclick="txsort(this,'desc')" style=cursor:pointer>Descrição <span class=sc></span></th>
+  <th onclick="txsort(this,'fav')" style=cursor:pointer>Favorecido <span class=sc></span></th>
+  <th onclick="txsort(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
+  <th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>
+  <th class=st onclick="txsort(this,'status')" style="cursor:pointer;text-align:center">Status <span class=sc></span></th>
+  <th class=vl onclick="txsort(this,'valor')" style="cursor:pointer;text-align:right">Valor (R$) <span class=sc></span></th>
+  <th style=text-align:right></th></tr>"""
+TX_ROWS = """{% for r in rows %}<tr class="drow st-{{r['status']}}">
+  <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
+  <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
+  <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
+  <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+  <td><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
+  <td><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">{% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
+  <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}" onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
+  <td class=txact><button class=edt onclick="edt(this)" title="editar (foca a linha)">✎</button><button class="excb {{'on' if r['excepcional']}}" onclick="sx({{r['id']}},this)" title="excepcional (fora do normal)">❗</button><button class=del onclick="dl({{r['id']}})" title=excluir>✕</button></td>
+</tr>{% endfor %}"""
+TX_TOTAL = """{% if rows %}<tr class=totrow><td colspan=6 style=text-align:right class=muted>Total</td><td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}"""
+TX_JS = """<script>window.ACOLOR={{acolor|tojson}};</script>
+<style>
+.txtbl{font-size:13px}.txtbl td,.txtbl th{padding:6px 6px}.txtbl .dt{max-width:195px}.txtbl .st{max-width:70px}
+.txtbl input,.txtbl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+.txtbl input:hover,.txtbl select:hover{border-color:var(--ln)}.txtbl input:focus,.txtbl select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+.txtbl .val.neg{color:var(--red)}.txtbl .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
+.stsel{max-width:56px;text-align:center;font-size:15px;font-weight:700}
+tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.st-conciliado .stsel{color:#2f81f7}tr.st-importado .stsel{color:var(--red)}tr.st-agendado .stsel{color:#a371f7}
+.acct{border-left:4px solid var(--ac,transparent)!important;padding-left:8px!important}
+.txact{white-space:nowrap;text-align:right}.txact button{background:transparent;border:0;cursor:pointer;font-size:14px;padding:3px 5px;color:var(--mut)}
+.txact .edt:hover{color:var(--acc)}.txact .del:hover{color:var(--red)}.txact .excb.on{color:#d29922}.txact .excb:hover{color:#d29922}.txact .addb{background:var(--grn);color:#fff;border-radius:6px;padding:3px 11px;font-weight:700;font-size:15px}
+tr.editing td{background:#2f81f714}tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}
+</style>
+<script>
+function sv(id,field,el){var b='field='+field+'&value='+encodeURIComponent(el.value);
+  fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
+  .then(function(r){return r.json();}).then(function(j){el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');
+    if(j.ok&&field=='status'){var tr=el.closest('tr');tr.className='drow st-'+el.value;el.title=el.value;}
+    setTimeout(function(){el.classList.remove('saved');},700);}).catch(function(){el.classList.add('err');});}
+function sacc(id,el){sv(id,'account_id',el);el.style.setProperty('--ac',(window.ACOLOR&&ACOLOR[el.value])||'transparent');}
+function sx(id,b){var on=b.classList.toggle('on');fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'field=excepcional&value='+(on?1:0)});}
+function dl(id){if(!confirm('Excluir esta transação?'))return;fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(function(){location.reload();});}
+function edt(b){var tr=b.closest('tr');var es=document.querySelectorAll('tr.editing');for(var i=0;i<es.length;i++)es[i].classList.remove('editing');tr.classList.add('editing');var x=tr.cells[1].querySelector('input');if(x){x.focus();if(x.select)x.select();}}
+function addtx(){var g=function(i){return document.getElementById(i).value;};if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
+  var b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),category:g('n_cat'),account_id:g('n_acc'),status:g('n_status'),valor:g('n_val')}).toString();
+  fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){return r.json();}).then(function(j){if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
+var _td={};
+function txsort(th,key){var t=th.closest('table');var rows=Array.prototype.slice.call(t.querySelectorAll('tr.drow'));
+  _td[key]=!_td[key];var dir=_td[key]?1:-1;
+  function val(r){if(key=='data')return r.querySelector('input[type=datetime-local]').value;
+    if(key=='desc')return r.cells[1].querySelector('input').value.toLowerCase();
+    if(key=='fav')return r.cells[2].querySelector('input').value.toLowerCase();
+    if(key=='cat')return (r.cells[3].querySelector('select').value||'~~~').toLowerCase();
+    if(key=='conta'){var s=r.cells[4].querySelector('select');return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
+    if(key=='status')return r.cells[5].querySelector('select').value;
+    if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.split('.').join('').replace(',','.'))||0;}
+    return '';}
+  rows.sort(function(a,b){var va=val(a),vb=val(b);return va<vb?-dir:va>vb?dir:0;});
+  var total=t.querySelector('tr.totrow');rows.forEach(function(r){t.insertBefore(r,total);});
+  var hs=t.querySelectorAll('.sc');for(var i=0;i<hs.length;i++)hs[i].textContent='';th.querySelector('.sc').textContent=dir>0?'▲':'▼';}
+</script>"""
+
 # monta a página injetando o corpo no template base (sem depender de extends por arquivo)
 def render(inner, **ctx):
     full = BASE.replace("{% block body %}{% endblock %}", inner)
@@ -383,7 +446,12 @@ def favorecido_det():
     c = db()
     rows = c.execute(f"""SELECT t.*, a.name acc FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
         WHERE {' AND '.join(where)} ORDER BY t.date DESC, t.id DESC""", params).fetchall()
+    accs = c.execute("SELECT id,name,color FROM accounts ORDER BY name").fetchall()
+    cat_rows = c.execute("SELECT name, COALESCE(NULLIF(grupo,''),'(sem grupo)') g FROM categories ORDER BY g, name").fetchall()
     c.close()
+    cat_groups = {}
+    for r in cat_rows: cat_groups.setdefault(r["g"], []).append(r["name"])
+    acolor = {a["id"]: (a["color"] or "#888") for a in accs}
     tot = sum(r["amount"] for r in rows)
     inner = """<div class=card>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
@@ -393,12 +461,11 @@ def favorecido_det():
       <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
       {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}</form>
     <p class=muted style=margin:4px 0 12px>{{rows|length}} lançamentos · total <b class="{{'pos' if tot>0 else 'neg'}}">{{tot|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
-    {% if rows %}<table class=smart><tr><th data-t=date>Data</th><th>Descrição</th><th data-f data-g>Categoria</th><th data-f data-g>Conta</th><th data-t=num data-sum style=text-align:right>Valor</th></tr>
-    {% for r in rows %}<tr><td>{{r['date']}}</td><td>{{r['description'] or '—'}}</td><td class=tag>{{r['category'] or '—'}}</td><td class=tag>{{r['acc'] or '—'}}</td>
-      <td style=text-align:right class="{{'pos' if r['amount']>0 else 'neg'}}">{{r['amount']|brl}}</td></tr>{% endfor %}</table>
-    {% else %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
-    <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}</style>"""
-    return render(inner, nome=nome, rows=rows, tot=tot, mes=mes, todos=todos)
+    <table class=txtbl>""" + TX_HEAD + TX_ROWS + TX_TOTAL + """</table>
+    {% if not rows %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
+    <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}</style>
+    """ + TX_JS
+    return render(inner, nome=nome, rows=rows, tot=tot, mes=mes, todos=todos, accs=accs, cat_groups=cat_groups, acolor=acolor, statuses=STATUSES, glyph=STATUS_GLYPH)
 
 FAV_TIPOS = ["", "pessoa", "empresa", "órgão público", "outro"]
 
@@ -527,7 +594,7 @@ def transacoes():
     for r in cat_rows: cat_groups.setdefault(r["g"], []).append(r["name"])
     acolor = {a["id"]: (a["color"] or "#888") for a in accs}
     inner = """<div class=card><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-    <h3 style="margin:0;flex:1">Transações</h3><a class=btn href="{{url_for('nova')}}">+ Lançar</a></div>
+    <h3 style="margin:0;flex:1">Transações</h3></div>
     <form class=filtros>
       <input type=month name=mes value="{{mes}}" onchange=this.form.submit()>
       <select name=conta onchange=this.form.submit()><option value="">Conta: todas</option>
@@ -546,87 +613,21 @@ def transacoes():
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if f_conta or f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes)}}" class=muted>limpar</a>{% endif %}
     </form>
-    <table id=tx><tr>
-      <th class=dt onclick="txsort(this,'data')" style=cursor:pointer>Data <span class=sc></span></th>
-      <th onclick="txsort(this,'desc')" style=cursor:pointer>Descrição <span class=sc></span></th>
-      <th onclick="txsort(this,'fav')" style=cursor:pointer>Favorecido <span class=sc></span></th>
-      <th onclick="txsort(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
-      <th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>
-      <th class=st onclick="txsort(this,'status')" style="cursor:pointer;text-align:center">Status <span class=sc></span></th>
-      <th class=vl onclick="txsort(this,'valor')" style="cursor:pointer;text-align:right">Valor (R$) <span class=sc></span></th>
-      <th title="despesa fora do normal" style=text-align:center>❗</th><th></th></tr>
-    <tr class=newrow>
+    <table id=tx class=txtbl>""" + TX_HEAD + """
+    <tr class="newrow skip">
       <td><input type=datetime-local id=n_date class=dt></td>
       <td><input id=n_desc placeholder="+ nova transação…"></td>
       <td><input id=n_fav placeholder="favorecido"></td>
       <td><select id=n_cat><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
       <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select id=n_status class=stsel title=status>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{glyph[s]}}</option>{% endfor %}</select></td>
+      <td><select id=n_status class=stsel>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{glyph[s]}}</option>{% endfor %}</select></td>
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
-      <td></td>
-      <td><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
-    {% for r in rows %}<tr class="drow st-{{r['status']}}">
-      <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
-      <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
-      <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
-      <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>
-        {% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
-      <td><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>
-        {% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
-      <td><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">
-        {% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
-      <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}"
-        onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
-      <td style=text-align:center><input type=checkbox {{'checked' if r['excepcional']}} onchange="sx({{r['id']}},this)" title="despesa fora do normal"></td>
-      <td><button class=del title=excluir onclick="dl({{r['id']}})">✕</button></td></tr>{% endfor %}
-    {% if rows %}<tr class=totrow><td colspan=6 style=text-align:right class=muted>Total filtrado</td>
-      <td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td><td></td></tr>{% endif %}</table>
+      <td class=txact><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
+    """ + TX_ROWS + TX_TOTAL + """</table>
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
     <div class=slegend>Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}</div></div>
-    <style>.wrap{max-width:none}#tx{font-size:13px}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}
-    .dt{max-width:195px}.st{max-width:140px}#tx td,#tx th{padding:6px 6px}
-    #tx input,#tx select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
-    #tx input:hover,#tx select:hover{border-color:var(--ln)}#tx input:focus,#tx select:focus{border-color:var(--acc);background:#0d1117;outline:none}
-    #tx .val.neg{color:var(--red)}#tx .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
-    button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
-    button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
-    tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}
-    .stsel{max-width:56px;text-align:center;font-size:15px;font-weight:700}
-    tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.st-conciliado .stsel{color:#2f81f7}tr.st-importado .stsel{color:var(--red)}tr.st-agendado .stsel{color:#a371f7}
-    .acct{border-left:4px solid var(--ac,transparent)!important;padding-left:8px!important}.slegend{font-size:12px;color:var(--mut);margin-top:10px}</style>
-    <script>
-    var ACOLOR={{ acolor|tojson }};
-    function sacc(id,el){sv(id,'account_id',el);el.style.setProperty('--ac',ACOLOR[el.value]||'transparent');}
-    function sv(id,field,el){const b='field='+field+'&value='+encodeURIComponent(el.value);
-      fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
-      .then(r=>r.json()).then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');
-        if(j.ok&&field=='status'){el.closest('tr').className='st-'+el.value;el.title=el.value;}
-        setTimeout(()=>el.classList.remove('saved'),700);}).catch(()=>el.classList.add('err'));}
-    function dl(id){if(!confirm('Excluir esta transação?'))return;
-      fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
-    function sx(id,el){fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'field=excepcional&value='+(el.checked?1:0)});}
-    function addtx(){const g=i=>document.getElementById(i).value;
-      if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
-      const b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),
-        category:g('n_cat'),account_id:g('n_acc'),status:g('n_status'),valor:g('n_val')}).toString();
-      fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
-      .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
-    var _td={};
-    function txsort(th,key){var t=document.getElementById('tx');var rows=Array.prototype.slice.call(t.querySelectorAll('tr.drow'));
-      _td[key]=!_td[key];var dir=_td[key]?1:-1;
-      function val(r){if(key=='data')return r.querySelector('input[type=datetime-local]').value;
-        if(key=='desc')return r.cells[1].querySelector('input').value.toLowerCase();
-        if(key=='fav')return r.cells[2].querySelector('input').value.toLowerCase();
-        if(key=='cat')return (r.cells[3].querySelector('select').value||'~~~').toLowerCase();
-        if(key=='conta'){var s=r.cells[4].querySelector('select');return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
-        if(key=='status')return r.cells[5].querySelector('select').value;
-        if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.split('.').join('').replace(',','.'))||0;}
-        return '';}
-      rows.sort(function(a,b){var va=val(a),vb=val(b);return va<vb?-dir:va>vb?dir:0;});
-      var total=t.querySelector('tr.totrow');rows.forEach(function(r){t.insertBefore(r,total);});
-      var hs=t.querySelectorAll('.sc');for(var i=0;i<hs.length;i++)hs[i].textContent='';
-      th.querySelector('.sc').textContent=dir>0?'▲':'▼';}
-    </script>"""
+    <style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}</style>
+    """ + TX_JS
     return render(inner, mes=mes, rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
                   statuses=STATUSES, glyph=STATUS_GLYPH,
                   f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
