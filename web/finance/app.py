@@ -371,7 +371,7 @@ def transacoes():
         if(key=='cat')return (r.cells[3].querySelector('select').value||'~~~').toLowerCase();
         if(key=='conta'){var s=r.cells[4].querySelector('select');return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
         if(key=='status')return r.cells[5].querySelector('select').value;
-        if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.replace(/\./g,'').replace(',','.'))||0;}
+        if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.split('.').join('').replace(',','.'))||0;}
         return '';}
       rows.sort(function(a,b){var va=val(a),vb=val(b);return va<vb?-dir:va>vb?dir:0;});
       var total=t.querySelector('tr.totrow');rows.forEach(function(r){t.insertBefore(r,total);});
