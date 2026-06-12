@@ -21,7 +21,10 @@ def _split_memo(memo):
     memo = (memo or "").strip()
     parts = [s.strip() for s in memo.split(" - ")]
     if re.match(r"(?i)\s*(transfer|pix|ted|doc)", memo) and len(parts) >= 2 and parts[1]:
-        return parts[0], parts[1]
+        desc, low = parts[0], parts[0].lower()
+        if "pix" in low and "enviad" in low: desc = "enviado via PIX"
+        elif "pix" in low and "recebid" in low: desc = "recebido via PIX"
+        return desc, parts[1]
     return memo, None
 
 def parse(text):
