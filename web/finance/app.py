@@ -64,19 +64,23 @@ app.jinja_env.filters["reais_plain"] = reais_plain
 # ---------- templates ----------
 BASE = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Finanças · PIrrai</title><style>
-:root{--bg:#0f1419;--card:#1a2230;--ink:#e6edf3;--mut:#8b98a9;--ln:#263041;--acc:#2f81f7;--red:#f85149;--grn:#3fb950}
+<title>Finanças · PIrrai</title>
+<script>(function(){try{var t=localStorage.getItem('fin-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<style>
+:root,html[data-theme=dark]{--bg:#0f1419;--card:#1a2230;--ink:#e6edf3;--mut:#8b98a9;--ln:#263041;--acc:#2f81f7;--red:#f85149;--grn:#3fb950;--inbg:#0d1117}
+html[data-theme=light]{--bg:#f5f7fa;--card:#ffffff;--ink:#1a2230;--mut:#5b6776;--ln:#d8dee6;--acc:#1f6feb;--red:#d1242f;--grn:#1a7f37;--inbg:#eef1f5}
 *{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
 a{color:var(--acc);text-decoration:none}.wrap{max-width:980px;margin:0 auto;padding:18px}
 header{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--ln);padding:14px 18px;background:var(--card)}
 header b{font-size:18px}header nav{display:flex;gap:14px;margin-left:auto;align-items:center}
+.themebtn{background:transparent;border:0;padding:0 2px;font-size:16px;line-height:1;cursor:pointer;color:var(--ink)}
 .card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:12px;margin-bottom:18px}
 .kpi .v{font-size:19px;font-weight:700;white-space:nowrap;letter-spacing:-.3px}.kpi .l{color:var(--mut);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--ln)}
 th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .neg{color:var(--red)}.pos{color:var(--grn)}.tag{font-size:12px;color:var(--mut)}
-input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--ln);background:#0d1117;color:var(--ink)}
+input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--ln);background:var(--inbg);color:var(--ink)}
 button,.btn{background:var(--acc);border:0;color:#fff;cursor:pointer;font-weight:600;padding:9px 16px}
 .flash{background:#1f6feb22;border:1px solid var(--acc);padding:10px 14px;border-radius:9px;margin-bottom:14px}
 form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -85,7 +89,15 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="https://pirrai.tail414b9b.ts.net/" title="serviços do PIrrai">🏠</a><a href="{{url_for('financas')}}">Resumo</a><a href="{{url_for('transacoes')}}">Transações</a><a href="{{url_for('favorecidos')}}">Favorecidos</a>
 <a href="{{url_for('grupos')}}">Grupos</a><a href="{{url_for('contas')}}">Contas</a><a href="{{url_for('regras')}}">Regras</a><a href="{{url_for('limites')}}">Limites</a><a href="{{url_for('conciliacao')}}">Conciliar</a><a href="{{url_for('senha')}}">Senha</a>
+<button id=themebtn class=themebtn onclick="toggleTheme()" title="tema claro/escuro">🌙</button>
 <span class=muted>{{session.user}}</span><a href="{{url_for('logout')}}">sair</a></nav></header>{% endif %}
+<script>
+function toggleTheme(){var h=document.documentElement;var cur=h.getAttribute('data-theme')==='light'?'dark':'light';
+  h.setAttribute('data-theme',cur);try{localStorage.setItem('fin-theme',cur);}catch(e){}
+  var b=document.getElementById('themebtn');if(b)b.textContent=cur==='light'?'☀️':'🌙';}
+document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('themebtn');
+  if(b)b.textContent=document.documentElement.getAttribute('data-theme')==='light'?'☀️':'🌙';});
+</script>
 <div class=wrap>
 {% with m=get_flashed_messages() %}{% if m %}<div class=flash>{{m|join(' · ')}}</div>{% endif %}{% endwith %}
 {% block body %}{% endblock %}</div></body></html>"""
@@ -93,10 +105,10 @@ form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block
 # ---------- smart-table: componente reutilizável (sort + filtros + agrupar/subtotais + CSV) ----------
 SMART = r"""<style>
 .smartbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
-.smartbar input,.smartbar select{font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--ln);background:#0d1117;color:var(--ink)}
+.smartbar input,.smartbar select{font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--ln);background:var(--inbg);color:var(--ink)}
 .smartbar .btn{padding:7px 12px}
 table.smart th .sc{color:var(--acc);font-size:11px;margin-left:2px}
-table.smart tr.grouphdr td{background:#0d1117}table.smart tr.smarttot td{border-top:2px solid var(--ln)}
+table.smart tr.grouphdr td{background:var(--inbg)}table.smart tr.smarttot td{border-top:2px solid var(--ln)}
 </style>
 <script>
 (function(){
@@ -163,26 +175,26 @@ TX_HEAD = """<tr>
   <th onclick="txsort(this,'desc')" style=cursor:pointer>Descrição <span class=sc></span></th>
   <th onclick="txsort(this,'fav')" style=cursor:pointer>Favorecido <span class=sc></span></th>
   <th onclick="txsort(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
-  <th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>
+  {% if show_conta|default(true) %}<th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>{% endif %}
   <th class=st onclick="txsort(this,'status')" style="cursor:pointer;text-align:center">Status <span class=sc></span></th>
   <th class=vl onclick="txsort(this,'valor')" style="cursor:pointer;text-align:right">Valor (R$) <span class=sc></span></th>
   <th style=text-align:right></th></tr>"""
 TX_ROWS = """{% for r in rows %}<tr class="drow st-{{r['status']}}">
-  <td><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
-  <td><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
-  <td><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
-  <td><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
-  <td><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
-  <td><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">{% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
-  <td><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}" onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
-  <td class=txact><button class=edt onclick="edt(this)" title="editar (foca a linha)">✎</button><button class="excb {{'on' if r['excepcional']}}" onclick="sx({{r['id']}},this)" title="excepcional (fora do normal)">❗</button><button class=del onclick="dl({{r['id']}})" title=excluir>✕</button></td>
+  <td data-k=data><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
+  <td data-k=desc><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
+  <td data-k=fav><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
+  <td data-k=cat><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+  {% if show_conta|default(true) %}<td data-k=conta><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>{% endif %}
+  <td data-k=status><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">{% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
+  <td data-k=valor><input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}" onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
+  <td class=txact><button class=edt onclick="edt(this)" title="editar / bloquear">✎</button><button class="excb {{'on' if r['excepcional']}}" onclick="sx({{r['id']}},this)" title="excepcional (fora do normal)">❗</button><button class=del onclick="dl({{r['id']}})" title=excluir>✕</button></td>
 </tr>{% endfor %}"""
-TX_TOTAL = """{% if rows %}<tr class=totrow><td colspan=6 style=text-align:right class=muted>Total</td><td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}"""
+TX_TOTAL = """{% if rows %}<tr class=totrow><td colspan="{{ 6 if show_conta|default(true) else 5 }}" style=text-align:right class=muted>Total</td><td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}"""
 TX_JS = """<script>window.ACOLOR={{acolor|tojson}};</script>
 <style>
 .txtbl{font-size:13px}.txtbl td,.txtbl th{padding:6px 6px}.txtbl .dt{max-width:195px}.txtbl .st{max-width:70px}
 .txtbl input,.txtbl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
-.txtbl input:hover,.txtbl select:hover{border-color:var(--ln)}.txtbl input:focus,.txtbl select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+.txtbl input:hover,.txtbl select:hover{border-color:var(--ln)}.txtbl input:focus,.txtbl select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
 .txtbl .val.neg{color:var(--red)}.txtbl .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
 .stsel{max-width:56px;text-align:center;font-size:15px;font-weight:700}
 tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.st-conciliado .stsel{color:#2f81f7}tr.st-importado .stsel{color:var(--red)}tr.st-agendado .stsel{color:#a371f7}
@@ -190,6 +202,8 @@ tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.
 .txact{white-space:nowrap;text-align:right}.txact button{background:transparent;border:0;cursor:pointer;font-size:14px;padding:3px 5px;color:var(--mut)}
 .txact .edt:hover{color:var(--acc)}.txact .del:hover{color:var(--red)}.txact .excb.on{color:#d29922}.txact .excb:hover{color:#d29922}.txact .addb{background:var(--grn);color:#fff;border-radius:6px;padding:3px 11px;font-weight:700;font-size:15px}
 tr.editing td{background:#2f81f714}tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}
+.txtbl tr.drow:not(.editing) input,.txtbl tr.drow:not(.editing) select{pointer-events:none}
+.txtbl tr.editing .edt{color:var(--acc)}
 </style>
 <script>
 function sv(id,field,el){var b='field='+field+'&value='+encodeURIComponent(el.value);
@@ -200,21 +214,24 @@ function sv(id,field,el){var b='field='+field+'&value='+encodeURIComponent(el.va
 function sacc(id,el){sv(id,'account_id',el);el.style.setProperty('--ac',(window.ACOLOR&&ACOLOR[el.value])||'transparent');}
 function sx(id,b){var on=b.classList.toggle('on');fetch('/api/tx/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'field=excepcional&value='+(on?1:0)});}
 function dl(id){if(!confirm('Excluir esta transação?'))return;fetch('/api/tx/'+id+'/delete',{method:'POST'}).then(function(){location.reload();});}
-function edt(b){var tr=b.closest('tr');var es=document.querySelectorAll('tr.editing');for(var i=0;i<es.length;i++)es[i].classList.remove('editing');tr.classList.add('editing');var x=tr.cells[1].querySelector('input');if(x){x.focus();if(x.select)x.select();}}
-function addtx(){var g=function(i){return document.getElementById(i).value;};if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
-  var b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),category:g('n_cat'),account_id:g('n_acc'),status:g('n_status'),valor:g('n_val')}).toString();
+function edt(b){var tr=b.closest('tr');var was=tr.classList.contains('editing');
+  var es=document.querySelectorAll('tr.editing');for(var i=0;i<es.length;i++)es[i].classList.remove('editing');
+  if(was)return;  // estava editando -> ✎ bloqueia de novo
+  tr.classList.add('editing');var x=tr.querySelector('[data-k=desc] input');if(x){x.focus();if(x.select)x.select();}}
+function addtx(){var g=function(i){var e=document.getElementById(i);return e?e.value:'';};if(!g('n_val')){alert('Informe o valor (use - para gasto, ex: -45,90).');return;}
+  var b=new URLSearchParams({date:g('n_date'),description:g('n_desc'),favorecido:g('n_fav'),category:g('n_cat'),account_id:(g('n_acc')||window.TXACC||''),status:g('n_status'),valor:g('n_val')}).toString();
   fetch('/api/tx/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){return r.json();}).then(function(j){if(j.ok)location.reload();else alert(j.err||'erro ao salvar');});}
 var _td={};
 function txsort(th,key){var t=th.closest('table');var rows=Array.prototype.slice.call(t.querySelectorAll('tr.drow'));
   if(!rows.length)return;
   _td[key]=!_td[key];var dir=_td[key]?1:-1;
-  function val(r){if(key=='data')return r.querySelector('input[type=datetime-local]').value;
-    if(key=='desc')return r.cells[1].querySelector('input').value.toLowerCase();
-    if(key=='fav')return r.cells[2].querySelector('input').value.toLowerCase();
-    if(key=='cat')return (r.cells[3].querySelector('select').value||'~~~').toLowerCase();
-    if(key=='conta'){var s=r.cells[4].querySelector('select');return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
-    if(key=='status')return r.cells[5].querySelector('select').value;
-    if(key=='valor'){var v=r.cells[6].querySelector('input').value;return parseFloat(v.split('.').join('').replace(',','.'))||0;}
+  function val(r){if(key=='data')return r.querySelector('[data-k=data] input').value;
+    if(key=='desc')return r.querySelector('[data-k=desc] input').value.toLowerCase();
+    if(key=='fav')return r.querySelector('[data-k=fav] input').value.toLowerCase();
+    if(key=='cat')return (r.querySelector('[data-k=cat] select').value||'~~~').toLowerCase();
+    if(key=='conta'){var s=r.querySelector('[data-k=conta] select');if(!s)return '';return (s.options[s.selectedIndex].text||'~~~').toLowerCase();}
+    if(key=='status')return r.querySelector('[data-k=status] select').value;
+    if(key=='valor'){var v=r.querySelector('[data-k=valor] input').value;return parseFloat(v.split('.').join('').replace(',','.'))||0;}
     return '';}
   rows.sort(function(a,b){var va=val(a),vb=val(b);return va<vb?-dir:va>vb?dir:0;});
   var total=t.querySelector('tr.totrow');var tb=rows[0].parentNode;rows.forEach(function(r){tb.insertBefore(r,total);});
@@ -390,7 +407,7 @@ def financas():
     <table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td><span class=catlink data-tipo=cat data-val="{{cat}}" onclick="openTx(this)" title="ver transações">{{cat}}</span></td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
     {% endfor %}</div>{% endif %}
     <style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
-    .gl{font-size:14px}.gt{background:#0d1117;border-radius:6px;height:18px;overflow:hidden}
+    .gl{font-size:14px}.gt{background:var(--inbg);border-radius:6px;height:18px;overflow:hidden}
     .gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}
     .mchart{display:flex;align-items:flex-end;gap:16px;min-height:185px;padding-top:10px;overflow-x:auto}
     .mcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:46px;flex:1}
@@ -493,7 +510,7 @@ def favorecidos():
       <td><div class=fbar><div class=ffill style="width:{{(r['total']/maxv*100)|round(1)}}%"></div></div></td></tr>{% endfor %}
     </table>{% else %}<p class=muted>Nenhuma despesa no período.</p>{% endif %}</div>
     <style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}
-    .fbar{background:#0d1117;border-radius:5px;height:8px;overflow:hidden}.ffill{height:100%;background:var(--red);border-radius:5px;min-width:2px}</style>"""
+    .fbar{background:var(--inbg);border-radius:5px;height:8px;overflow:hidden}.ffill{height:100%;background:var(--red);border-radius:5px;min-width:2px}</style>"""
     return render(inner, rows=rows, total=total, maxv=maxv, mes=mes, todos=todos, q=q)
 
 @app.route("/favorecido")
@@ -569,7 +586,7 @@ def favorecidos_gerir():
       <td><button class=del onclick="dlf({{f.id}})">✕</button></td></tr>{% endfor %}
     </table></div>
     <style>#fv{font-size:13px}#fv td,#fv th{padding:6px 6px}#fv input,#fv select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
-    #fv input:hover,#fv select:hover{border-color:var(--ln)}#fv input:focus,#fv select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    #fv input:hover,#fv select:hover{border-color:var(--ln)}#fv input:focus,#fv select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
     .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
     button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}tr.newrow{background:#2f81f714}</style>
     <script>
@@ -661,10 +678,13 @@ def transacoes():
     acolor = {a["id"]: (a["color"] or "#888") for a in accs}
     inner = """<div class=card><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
     <h3 style="margin:0;flex:1">Transações</h3></div>
+    <div class=txtabs>
+      {% for a in accs %}<a class="txtab{{' on' if f_conta==a['id']|string}}" style="--ac:{{acolor.get(a['id'],'var(--acc)')}}" href="{{url_for('transacoes',mes=mes,conta=a['id'],categoria=f_cat,status=f_status,q=q)}}">{{a['name']}}</a>{% endfor %}
+      <a class="txtab{{' on' if not f_conta}}" href="{{url_for('transacoes',mes=mes,categoria=f_cat,status=f_status,q=q)}}">Todas</a>
+    </div>
     <form class=filtros>
       <input type=month name=mes value="{{mes}}" onchange=this.form.submit()>
-      <select name=conta onchange=this.form.submit()><option value="">Conta: todas</option>
-        {% for a in accs %}<option value="{{a['id']}}" {{'selected' if f_conta==a['id']|string}}>{{a['name']}}</option>{% endfor %}</select>
+      {% if f_conta %}<input type=hidden name=conta value="{{f_conta}}">{% endif %}
       <select name=categoria onchange=this.form.submit()><option value="">Categoria: todas</option>
         <option value="__sem__" {{'selected' if f_cat=='__sem__'}}>— sem categoria —</option>
         <optgroup label="Por nível">
@@ -677,7 +697,7 @@ def transacoes():
       <select name=status onchange=this.form.submit()><option value="">Status: todos</option>
         {% for s in statuses %}<option {{'selected' if f_status==s}}>{{s}}</option>{% endfor %}</select>
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
-      {% if f_conta or f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes)}}" class=muted>limpar</a>{% endif %}
+      {% if f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes,conta=f_conta)}}" class=muted>limpar</a>{% endif %}
     </form>
     <table id=tx class=txtbl>""" + TX_HEAD + """
     <tr class="newrow skip">
@@ -685,17 +705,22 @@ def transacoes():
       <td><input id=n_desc placeholder="+ nova transação…"></td>
       <td><input id=n_fav placeholder="favorecido"></td>
       <td><select id=n_cat><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
-      <td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
+      {% if show_conta %}<td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>{% endif %}
       <td><select id=n_status class=stsel>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{glyph[s]}}</option>{% endfor %}</select></td>
       <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
       <td class=txact><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
     """ + TX_ROWS + TX_TOTAL + """</table>
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
     <div class=slegend>Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}</div></div>
-    <style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}</style>
+    <script>window.TXACC={{ (f_conta or '')|tojson }};</script>
+    <style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}
+    .txtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--ln);margin-bottom:14px}
+    .txtab{padding:8px 14px;border:1px solid var(--ln);border-bottom:0;border-radius:9px 9px 0 0;color:var(--mut);background:var(--card);margin-bottom:-1px;font-size:13px;border-top:3px solid transparent}
+    .txtab:hover{color:var(--ink)}
+    .txtab.on{color:var(--ink);font-weight:700;background:var(--bg);border-top:3px solid var(--ac,var(--acc))}</style>
     """ + TX_JS
     return render(inner, mes=mes, rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
-                  statuses=STATUSES, glyph=STATUS_GLYPH,
+                  statuses=STATUSES, glyph=STATUS_GLYPH, show_conta=(not f_conta),
                   f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
 
 @app.route("/api/tx/<int:tid>", methods=["POST"])
@@ -837,7 +862,7 @@ def regras():
       <td><button class=del onclick="dlr({{r['id']}})" title=excluir>✕</button></td></tr>{% endfor %}
     </table>{% if not rows %}<p class=muted style=margin-top:10px>Nenhuma regra ainda. Use a primeira linha.</p>{% endif %}</div>
     <style>#rl{font-size:13px}#rl td,#rl th{padding:6px 6px}#rl input,#rl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
-    #rl input:hover,#rl select:hover{border-color:var(--ln)}#rl input:focus,#rl select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    #rl input:hover,#rl select:hover{border-color:var(--ln)}#rl input:focus,#rl select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
     .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
     button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
     button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
@@ -909,13 +934,13 @@ def limites():
     {% for r in rows %}<tr>
       <td>{{r['icon']}} {{r['name']}}</td>
       <td><input value="{{ r['lim']|reais_plain if r['lim'] else '' }}" placeholder="—" onchange="sl('{{r['name']}}',this)"
-        style="width:110px;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px;text-align:right"></td>
+        style="width:110px;background:var(--inbg);border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px;text-align:right"></td>
       <td>{% if r['lim'] %}{% set p=(r['spent']*100//r['lim']) %}
         <div class=pbar><div class=pfill style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
         <span class=tag>{{r['spent']|brl}} · {{p}}%</span>
       {% else %}<span class=muted>{{r['spent']|brl}} (sem limite)</span>{% endif %}</td></tr>{% endfor %}
     </table></div>
-    <style>.pbar{background:#0d1117;border-radius:5px;height:8px;overflow:hidden;margin-bottom:3px}.pfill{height:100%;border-radius:5px;min-width:2px}</style>
+    <style>.pbar{background:var(--inbg);border-radius:5px;height:8px;overflow:hidden;margin-bottom:3px}.pfill{height:100%;border-radius:5px;min-width:2px}</style>
     <script>function sl(name,el){fetch('/api/limite',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body:'name='+encodeURIComponent(name)+'&value='+encodeURIComponent(el.value)})
       .then(r=>r.json()).then(j=>{el.style.borderColor=j.ok?'var(--grn)':'var(--red)';if(j.ok)setTimeout(()=>location.reload(),500);});}</script>"""
@@ -971,7 +996,7 @@ def contas():
     </table></div>
     <style>#acc{font-size:13px}#acc td,#acc th{padding:6px 6px}
     #acc input,#acc select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
-    #acc input:hover,#acc select:hover{border-color:var(--ln)}#acc input:focus,#acc select:focus{border-color:var(--acc);background:#0d1117;outline:none}
+    #acc input:hover,#acc select:hover{border-color:var(--ln)}#acc input:focus,#acc select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
     .saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
     button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
     button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
@@ -1055,7 +1080,7 @@ def grupos():
     {% set nfull = {0:'Neutro (movimentação/receita)',1:'Comprometido (fixo/contrato)',2:'Necessário variável',3:'Discricionário'} %}
     {% for c in cats %}<tr><td>{{c['name']}}</td>
       <td><input list=grps value="{{c['grupo'] or ''}}" placeholder="(sem grupo)" {{'disabled' if c['is_transfer']}}
-        onchange="sg('{{c['name']}}',this)" style="width:100%;background:#0d1117;border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td>
+        onchange="sg('{{c['name']}}',this)" style="width:100%;background:var(--inbg);border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px"></td>
       <td style=text-align:center><span class=pills>
         {% for v in [0,1,2,3] %}<button type=button class="pill{{' on' if c['nivel']==v}}" style="--pc:{{ncores[v]}}" title="{{nfull[v]}}" onclick="sn(this,'{{c['name']}}',{{v}})">{{nlabels[v]}}</button>{% endfor %}
       </span></td>
