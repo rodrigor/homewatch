@@ -433,17 +433,18 @@ def financas():
         <span class=tag>N1+N2+N3 {{p.base|brl}}{% if p.n0>0 %} · sem nível {{p.n0|brl}}{% endif %}</span></div>
       <div class=pdist>
         {% for niv,val in [(1,p.n1),(2,p.n2),(3,p.n3)] if val>0 %}
-        <div class=pseg style="flex:{{val}};background:{{ncor[niv]}}" title="N{{niv}}: {{val|brl}}">{{(val/p.base*100)|round(0)|int}}%</div>{% endfor %}
+        <div class=pseg style="flex:{{val}};background:{{ncor[niv]}}" title="N{{niv}}: {{val|brl}} — clique p/ ver lançamentos" data-tipo=pessoanivel data-val="{{niv}}" data-pessoa="{{p.nome}}" data-lbl="{{p.nome}} · N{{niv}}" onclick="openTx(this)">{{(val/p.base*100)|round(0)|int}}%</div>{% endfor %}
       </div>
       <div class=pleg>
-        <span><i style="background:{{ncor[1]}}"></i>N1 Comprometido — {{p.n1|brl}} <b>{{(p.n1/p.base*100)|round(0)|int}}%</b></span>
-        <span><i style="background:{{ncor[2]}}"></i>N2 Necessário — {{p.n2|brl}} <b>{{(p.n2/p.base*100)|round(0)|int}}%</b></span>
-        <span><i style="background:{{ncor[3]}}"></i>N3 Discricionário — {{p.n3|brl}} <b>{{(p.n3/p.base*100)|round(0)|int}}%</b></span></div>
+        {% for niv,val,nm in [(1,p.n1,'N1 Comprometido'),(2,p.n2,'N2 Necessário'),(3,p.n3,'N3 Discricionário')] %}
+        <span class=plegi data-tipo=pessoanivel data-val="{{niv}}" data-pessoa="{{p.nome}}" data-lbl="{{p.nome}} · N{{niv}}" onclick="openTx(this)" title="ver lançamentos"><i style="background:{{ncor[niv]}}"></i>{{nm}} — {{val|brl}} <b>{{(val/p.base*100)|round(0)|int}}%</b></span>{% endfor %}</div>
     </div>{% endfor %}
     <style>.pdist{display:flex;height:26px;border-radius:7px;overflow:hidden;background:var(--inbg)}
-    .pseg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;min-width:0;overflow:hidden}
+    .pseg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;min-width:0;overflow:hidden;cursor:pointer}
+    .pseg:hover{filter:brightness(1.12)}
     .pleg{display:flex;gap:8px 18px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:7px}
-    .pleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}.pleg b{color:var(--ink)}</style></div>{% endif %}
+    .pleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}.pleg b{color:var(--ink)}
+    .plegi{cursor:pointer}.plegi:hover{color:var(--ink)}.plegi:hover b{text-decoration:underline}</style></div>{% endif %}
     <div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por grupo</h3>
       <a class=tag href="{{url_for('grupos')}}">editar grupos →</a></div>
     {% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
@@ -489,10 +490,11 @@ def financas():
       </div></div>
     <script>
     function openTx(el){var tipo=el.dataset.tipo||'cat',val=el.dataset.val,lbl=el.dataset.lbl||val;
+      var extra=el.dataset.pessoa?('&pessoa='+encodeURIComponent(el.dataset.pessoa)):'';
       document.getElementById('catttl').textContent='Transações · '+lbl+' · {{mes}}';
       document.getElementById('catbody').innerHTML='<p class=muted>Carregando…</p>';
       document.getElementById('catmodal').classList.add('on');
-      fetch('/api/cat_tx?mes={{mes}}&tipo='+tipo+'&val='+encodeURIComponent(val))
+      fetch('/api/cat_tx?mes={{mes}}&tipo='+tipo+'&val='+encodeURIComponent(val)+extra)
         .then(function(r){return r.text();}).then(function(h){document.getElementById('catbody').innerHTML=h;})
         .catch(function(){document.getElementById('catbody').innerHTML='<p class=neg>Erro ao carregar.</p>';});}
     function closeCat(){document.getElementById('catmodal').classList.remove('on');}
@@ -521,6 +523,17 @@ def api_cat_tx():
     elif tipo == "nivel":
         w = "COALESCE((SELECT nivel FROM categories WHERE name=t.category),0)=?" + despesa
         rows = c.execute(base.format(w=w), (int(val or 0), mes)).fetchall()
+    elif tipo == "pessoanivel":
+        # despesas de uma pessoa (titular da conta) num nível — recorrentes + excepcionais (não exclui excepcional)
+        pessoa = request.args.get("pessoa", ""); niv = int(val or 0)
+        nt = " AND t.amount<0 AND COALESCE(t.category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
+        nivc = " AND COALESCE((SELECT nivel FROM categories WHERE name=t.category),0)=?"
+        if pessoa in ("", "(sem titular)"):
+            w = "t.account_id IN (SELECT id FROM accounts WHERE titular IS NULL)" + nivc + nt
+            rows = c.execute(base.format(w=w), (niv, mes)).fetchall()
+        else:
+            w = "t.account_id IN (SELECT id FROM accounts WHERE titular=?)" + nivc + nt
+            rows = c.execute(base.format(w=w), (pessoa, niv, mes)).fetchall()
     elif val in ("(sem categoria)", "—", ""):
         rows = c.execute(base.format(w="(t.category IS NULL OR t.category='')"), (mes,)).fetchall()
     else:
@@ -532,7 +545,7 @@ def api_cat_tx():
     for r in cat_rows: cat_groups.setdefault(r["g"], []).append(r["name"])
     acolor = {a["id"]: (a["color"] or "#888") for a in accs}
     if not rows:
-        return "<p class=muted>Nenhuma transação nesta categoria no mês.</p>"
+        return "<p class=muted>Nenhuma transação neste recorte no mês.</p>"
     return render_template_string("<table class=txtbl>" + TX_HEAD + TX_ROWS + TX_TOTAL + "</table>",
                                   rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
                                   statuses=STATUSES, glyph=STATUS_GLYPH, tot=tot)
