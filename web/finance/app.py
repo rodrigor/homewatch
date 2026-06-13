@@ -61,6 +61,23 @@ def login_required(f):
 app.jinja_env.filters["brl"] = brl
 app.jinja_env.filters["reais_plain"] = reais_plain
 
+TITULARES = ["Ayla", "Rodrigo", "Casa"]  # dono da conta (atribui as despesas a uma pessoa)
+
+def _ensure_schema():
+    """migração idempotente: garante a coluna accounts.titular e auto-detecta pelo nome."""
+    try:
+        c = db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(accounts)")]
+        if "titular" not in cols:
+            c.execute("ALTER TABLE accounts ADD COLUMN titular TEXT")
+            c.execute("UPDATE accounts SET titular='Ayla'    WHERE titular IS NULL AND lower(name) LIKE '%ayla%'")
+            c.execute("UPDATE accounts SET titular='Rodrigo' WHERE titular IS NULL AND lower(name) LIKE '%rodrigo%'")
+            c.commit()
+        c.close()
+    except Exception:
+        pass
+_ensure_schema()
+
 # ---------- templates ----------
 BASE = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -306,6 +323,13 @@ def financas():
         FROM transactions t LEFT JOIN categories cat ON cat.name=t.category
         WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
         GROUP BY cat.nivel, t.category ORDER BY cat.nivel, v DESC""", (mes,)).fetchall()
+    # --- distribuição N1/N2/N3 por pessoa (titular da conta); recorrentes + excepcionais ---
+    pessoa_rows = c.execute("""
+        SELECT COALESCE(a.titular,'(sem titular)') pessoa, COALESCE(cat.nivel,0) niv, -SUM(t.amount) v
+        FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
+        LEFT JOIN categories cat ON cat.name=t.category
+        WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0
+        GROUP BY a.titular, cat.nivel""", (mes,)).fetchall()
     obrigatorio = n1 + n2
     cfg_sal = c.execute("SELECT value FROM config WHERE key='salario_base'").fetchone()
     salario_base = int(cfg_sal[0]) if cfg_sal else 0
@@ -319,6 +343,18 @@ def financas():
         if items:
             niv_detail.append({"label": NIV_LABEL[lv], "color": NIV_COLOR[lv],
                                "total": sum(v for _, v in items), "items": items})
+    # agrega despesas por pessoa × nível e ordena (Ayla, Rodrigo, Casa, demais)
+    pmap = {}
+    for r in pessoa_rows:
+        d = pmap.setdefault(r["pessoa"], {0: 0, 1: 0, 2: 0, 3: 0})
+        d[r["niv"]] = d.get(r["niv"], 0) + r["v"]
+    _ordem = ["Ayla", "Rodrigo", "Casa"]
+    _pnomes = [p for p in _ordem if p in pmap] + sorted(p for p in pmap if p not in _ordem)
+    pessoas = []
+    for p in _pnomes:
+        d = pmap[p]; base = d[1] + d[2] + d[3]
+        if base <= 0: continue   # seção é sobre N1/N2/N3
+        pessoas.append({"nome": p, "n1": d[1], "n2": d[2], "n3": d[3], "n0": d[0], "base": base})
     MESN = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
     mm = list(reversed(meses_raw))
     maxm = max([max(r["rec"] + r["exc"], r["receita"]) for r in mm], default=1) or 1
@@ -386,6 +422,28 @@ def financas():
         <code>finance.sh config salario_base &lt;valor&gt;</code></div>
       {% endif %}
     </div></div>
+    {% if pessoas %}<div class=card><div style="display:flex;align-items:center;margin-bottom:4px"><h3 style="margin:0;flex:1">Distribuição por pessoa (N1/N2/N3)</h3>
+      <a class=tag href="{{url_for('contas')}}">editar titular →</a></div>
+    <p class=tag style="margin:0 0 14px">Quanto cada pessoa gasta por essencialidade (titular da conta) — recorrentes + excepcionais, exclui movimentações. % entre N1/N2/N3.</p>
+    {% set ncor = {1:'#2f81f7',2:'#3fb950',3:'#ef6c00'} %}
+    {% for p in pessoas %}
+    <div style="margin:0 0 16px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+        <b style="font-size:15px">{{p.nome}}</b>
+        <span class=tag>N1+N2+N3 {{p.base|brl}}{% if p.n0>0 %} · sem nível {{p.n0|brl}}{% endif %}</span></div>
+      <div class=pdist>
+        {% for niv,val in [(1,p.n1),(2,p.n2),(3,p.n3)] if val>0 %}
+        <div class=pseg style="flex:{{val}};background:{{ncor[niv]}}" title="N{{niv}}: {{val|brl}}">{{(val/p.base*100)|round(0)|int}}%</div>{% endfor %}
+      </div>
+      <div class=pleg>
+        <span><i style="background:{{ncor[1]}}"></i>N1 Comprometido — {{p.n1|brl}} <b>{{(p.n1/p.base*100)|round(0)|int}}%</b></span>
+        <span><i style="background:{{ncor[2]}}"></i>N2 Necessário — {{p.n2|brl}} <b>{{(p.n2/p.base*100)|round(0)|int}}%</b></span>
+        <span><i style="background:{{ncor[3]}}"></i>N3 Discricionário — {{p.n3|brl}} <b>{{(p.n3/p.base*100)|round(0)|int}}%</b></span></div>
+    </div>{% endfor %}
+    <style>.pdist{display:flex;height:26px;border-radius:7px;overflow:hidden;background:var(--inbg)}
+    .pseg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;min-width:0;overflow:hidden}
+    .pleg{display:flex;gap:8px 18px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:7px}
+    .pleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}.pleg b{color:var(--ink)}</style></div>{% endif %}
     <div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por grupo</h3>
       <a class=tag href="{{url_for('grupos')}}">editar grupos →</a></div>
     {% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
@@ -442,7 +500,7 @@ def financas():
     </script>""" + TX_JS
     return render(inner, mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend, grupos=grupos, niv_detail=niv_detail, orc=orc, maxg=maxg, totg=totg, meses=meses,
                   n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base,
-                  acolor=acolor)
+                  acolor=acolor, pessoas=pessoas)
 
 # ---------- transações de uma categoria (modal do Resumo) ----------
 @app.route("/api/cat_tx")
@@ -986,9 +1044,10 @@ def contas():
     inner = """<div class=card>
     <h3 style=margin-top:0>Contas</h3>
     <p class=muted>Cadastre suas contas (banco, número). Extratos OFX criam/atualizam a conta sozinhos pelo número. Use a primeira linha pra adicionar.</p>
-    <table id=acc class=smart><tr><th>Nome</th><th data-f data-g>Banco</th><th>Número</th><th data-f data-g>Tipo</th><th data-nosort>Cor</th><th data-t=num>Uso</th><th data-nosort></th></tr>
+    <table id=acc class=smart><tr><th>Nome</th><th data-f data-g>Titular</th><th data-f data-g>Banco</th><th>Número</th><th data-f data-g>Tipo</th><th data-nosort>Cor</th><th data-t=num>Uso</th><th data-nosort></th></tr>
     <tr class="newrow skip">
       <td><input id=a_name placeholder="+ nova conta…"></td>
+      <td><select id=a_titular><option value="">—</option>{% for t in titulares %}<option>{{t}}</option>{% endfor %}</select></td>
       <td><input id=a_bank placeholder="banco"></td>
       <td><input id=a_num placeholder="número"></td>
       <td><select id=a_type>{% for t in types %}<option>{{t}}</option>{% endfor %}</select></td>
@@ -996,6 +1055,7 @@ def contas():
       <td></td><td><button class=addb onclick="adda()" title=adicionar>＋</button></td></tr>
     {% for r in rows %}<tr>
       <td><input value="{{r['name']}}" onchange="sa({{r['id']}},'name',this)"></td>
+      <td><select onchange="sa({{r['id']}},'titular',this)"><option value="">—</option>{% for t in titulares %}<option {{'selected' if r['titular']==t}}>{{t}}</option>{% endfor %}{% if r['titular'] and r['titular'] not in titulares %}<option selected>{{r['titular']}}</option>{% endif %}</select></td>
       <td><input value="{{r['bank'] or ''}}" onchange="sa({{r['id']}},'bank',this)"></td>
       <td><input value="{{r['numero'] or ''}}" onchange="sa({{r['id']}},'numero',this)"></td>
       <td><select onchange="sa({{r['id']}},'type',this)">{% for t in types %}<option {{'selected' if r['type']==t}}>{{t}}</option>{% endfor %}
@@ -1017,13 +1077,13 @@ def contas():
       .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
     function adda(){const g=i=>document.getElementById(i).value;
       if(!g('a_name')){alert('Informe o nome da conta.');return;}
-      const b=new URLSearchParams({name:g('a_name'),bank:g('a_bank'),numero:g('a_num'),type:g('a_type'),color:g('a_color')}).toString();
+      const b=new URLSearchParams({name:g('a_name'),titular:g('a_titular'),bank:g('a_bank'),numero:g('a_num'),type:g('a_type'),color:g('a_color')}).toString();
       fetch('/api/account/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
       .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
     function dla(id,usos){if(!confirm(usos>0?('Esta conta tem '+usos+' transações; elas ficarão sem conta. Excluir?'):'Excluir conta?'))return;
       fetch('/api/account/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
     </script>"""
-    return render(inner, rows=rows, types=ACCT_TYPES)
+    return render(inner, rows=rows, types=ACCT_TYPES, titulares=TITULARES)
 
 @app.route("/api/account/new", methods=["POST"])
 @login_required
@@ -1032,8 +1092,8 @@ def api_account_new():
     if not name: return {"ok": False, "err": "nome obrigatório"}, 400
     c = db()
     try:
-        c.execute("INSERT INTO accounts(name,bank,numero,type,color) VALUES(?,?,?,?,?)",
-                  (name, f.get("bank") or None, f.get("numero") or None, f.get("type") or "conta", f.get("color") or "#888"))
+        c.execute("INSERT INTO accounts(name,bank,numero,type,color,titular) VALUES(?,?,?,?,?,?)",
+                  (name, f.get("bank") or None, f.get("numero") or None, f.get("type") or "conta", f.get("color") or "#888", f.get("titular") or None))
         c.commit()
     except sqlite3.IntegrityError:
         c.close(); return {"ok": False, "err": "já existe conta com esse nome"}, 400
@@ -1043,7 +1103,7 @@ def api_account_new():
 @login_required
 def api_account(aid):
     field = request.form.get("field"); value = request.form.get("value", "").strip()
-    if field not in {"name", "bank", "numero", "type", "color"}:
+    if field not in {"name", "bank", "numero", "type", "color", "titular"}:
         return {"ok": False, "err": "campo inválido"}, 400
     if field == "name" and not value:
         return {"ok": False, "err": "nome não pode ficar vazio"}, 400
