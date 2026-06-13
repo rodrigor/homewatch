@@ -655,9 +655,15 @@ def favorecidos_aplicar():
 @login_required
 def transacoes():
     mes = request.args.get("mes", datetime.date.today().strftime("%Y-%m"))
+    de = request.args.get("de", "").strip(); ate = request.args.get("ate", "").strip()
     f_conta = request.args.get("conta", ""); f_cat = request.args.get("categoria", "")
     f_status = request.args.get("status", ""); q = request.args.get("q", "").strip()
-    where = ["substr(t.date,1,7)=?"]; params = [mes]
+    where = []; params = []
+    if de or ate:                       # intervalo de datas tem prioridade sobre o mês
+        if de:  where.append("t.date>=?"); params.append(de)
+        if ate: where.append("t.date<=?"); params.append(ate)
+    else:
+        where.append("substr(t.date,1,7)=?"); params.append(mes)
     if f_conta:  where.append("t.account_id=?"); params.append(f_conta)
     if f_cat == "__sem__":
         where.append("(t.category IS NULL OR t.category='')")
@@ -679,11 +685,12 @@ def transacoes():
     inner = """<div class=card><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
     <h3 style="margin:0;flex:1">Transações</h3></div>
     <div class=txtabs>
-      {% for a in accs %}<a class="txtab{{' on' if f_conta==a['id']|string}}" style="--ac:{{acolor.get(a['id'],'var(--acc)')}}" href="{{url_for('transacoes',mes=mes,conta=a['id'],categoria=f_cat,status=f_status,q=q)}}">{{a['name']}}</a>{% endfor %}
-      <a class="txtab{{' on' if not f_conta}}" href="{{url_for('transacoes',mes=mes,categoria=f_cat,status=f_status,q=q)}}">Todas</a>
+      {% for a in accs %}<a class="txtab{{' on' if f_conta==a['id']|string}}" style="--ac:{{acolor.get(a['id'],'var(--acc)')}}" href="{{url_for('transacoes',mes=mes,de=de,ate=ate,conta=a['id'],categoria=f_cat,status=f_status,q=q)}}">{{a['name']}}</a>{% endfor %}
+      <a class="txtab{{' on' if not f_conta}}" href="{{url_for('transacoes',mes=mes,de=de,ate=ate,categoria=f_cat,status=f_status,q=q)}}">Todas</a>
     </div>
     <form class=filtros>
-      <input type=month name=mes value="{{mes}}" onchange=this.form.submit()>
+      <input type=month name=mes value="{{mes}}" {{'disabled' if de or ate}} onchange=this.form.submit() title="mês (ignorado quando há intervalo de datas)">
+      <span class=daterange>de <input type=date name=de value="{{de}}" onchange=this.form.submit()> até <input type=date name=ate value="{{ate}}" onchange=this.form.submit()></span>
       {% if f_conta %}<input type=hidden name=conta value="{{f_conta}}">{% endif %}
       <select name=categoria onchange=this.form.submit()><option value="">Categoria: todas</option>
         <option value="__sem__" {{'selected' if f_cat=='__sem__'}}>— sem categoria —</option>
@@ -697,7 +704,7 @@ def transacoes():
       <select name=status onchange=this.form.submit()><option value="">Status: todos</option>
         {% for s in statuses %}<option {{'selected' if f_status==s}}>{{s}}</option>{% endfor %}</select>
       <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
-      {% if f_cat or f_status or q %}<a href="{{url_for('transacoes',mes=mes,conta=f_conta)}}" class=muted>limpar</a>{% endif %}
+      {% if f_cat or f_status or q or de or ate %}<a href="{{url_for('transacoes',mes=mes,conta=f_conta)}}" class=muted>limpar</a>{% endif %}
     </form>
     <table id=tx class=txtbl>""" + TX_HEAD + """
     <tr class="newrow skip">
@@ -713,7 +720,8 @@ def transacoes():
     {% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
     <div class=slegend>Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}</div></div>
     <script>window.TXACC={{ (f_conta or '')|tojson }};</script>
-    <style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}
+    <style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}
+    .daterange{display:inline-flex;align-items:center;gap:5px;color:var(--mut);font-size:12px}.daterange input{font-size:13px}
     .txtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--ln);margin-bottom:14px}
     .txtab{padding:8px 14px;border:1px solid var(--ln);border-bottom:0;border-radius:9px 9px 0 0;color:var(--mut);background:var(--card);margin-bottom:-1px;font-size:13px;border-top:3px solid transparent}
     .txtab:hover{color:var(--ink)}
@@ -721,7 +729,7 @@ def transacoes():
     """ + TX_JS
     return render(inner, mes=mes, rows=rows, accs=accs, cat_groups=cat_groups, acolor=acolor,
                   statuses=STATUSES, glyph=STATUS_GLYPH, show_conta=(not f_conta),
-                  f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot)
+                  f_conta=f_conta, f_cat=f_cat, f_status=f_status, q=q, tot=tot, de=de, ate=ate)
 
 @app.route("/api/tx/<int:tid>", methods=["POST"])
 @login_required
