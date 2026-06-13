@@ -81,6 +81,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .neg{color:var(--red)}.pos{color:var(--grn)}.tag{font-size:12px;color:var(--mut)}
 input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--ln);background:var(--inbg);color:var(--ink)}
+.fon{border-color:var(--acc)!important;box-shadow:0 0 0 1px var(--acc);font-weight:600}
 button,.btn{background:var(--acc);border:0;color:#fff;cursor:pointer;font-weight:600;padding:9px 16px}
 .flash{background:#1f6feb22;border:1px solid var(--acc);padding:10px 14px;border-radius:9px;margin-bottom:14px}
 form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -126,15 +127,15 @@ function init(t){
   src.forEach(function(r){r.parentNode.removeChild(r);});
   var st={s:-1,d:1,g:-1,fl:{},q:''};
   var bar=document.createElement('div');bar.className='smartbar';
-  var qi=document.createElement('input');qi.placeholder='buscar…';qi.oninput=function(){st.q=qi.value.toLowerCase();render();};bar.appendChild(qi);
+  var qi=document.createElement('input');qi.placeholder='buscar…';qi.oninput=function(){st.q=qi.value.toLowerCase();qi.classList.toggle('fon',!!qi.value);render();};bar.appendChild(qi);
   cols.forEach(function(c){if(!c.f)return;var seen={},opts=[];src.forEach(function(r){var v=cval(r,c);if(!(v in seen)){seen[v]=1;opts.push(v);}});
     opts.sort();var s=document.createElement('select');var h='<option value="">'+esc(c.label)+': todos</option>';
     opts.forEach(function(v){h+='<option>'+esc(v)+'</option>';});s.innerHTML=h;
-    s.onchange=function(){st.fl[c.i]=s.value;render();};bar.appendChild(s);});
+    s.onchange=function(){st.fl[c.i]=s.value;s.classList.toggle('fon',!!s.value);render();};bar.appendChild(s);});
   var gables=cols.filter(function(c){return c.g;});
   if(gables.length){var gs=document.createElement('select');var gh='<option value="-1">agrupar: —</option>';
     gables.forEach(function(c){gh+='<option value="'+c.i+'">agrupar: '+esc(c.label)+'</option>';});gs.innerHTML=gh;
-    gs.onchange=function(){st.g=parseInt(gs.value);render();};bar.appendChild(gs);}
+    gs.onchange=function(){st.g=parseInt(gs.value);gs.classList.toggle('fon',st.g>=0);render();};bar.appendChild(gs);}
   var cbt=document.createElement('button');cbt.type='button';cbt.textContent='CSV';cbt.className='btn';cbt.onclick=expCsv;bar.appendChild(cbt);
   t.parentNode.insertBefore(bar,t);
   cols.forEach(function(c){if(c.nos)return;var th=head.cells[c.i];th.style.cursor='pointer';
@@ -498,8 +499,8 @@ def favorecidos():
       <a class=tag href="{{url_for('favorecidos_gerir')}}">gerenciar favorecidos →</a></div>
     <form class=ffil>
       <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
-      {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}
-      <input name=q value="{{q}}" placeholder="buscar favorecido…" onkeydown="if(event.key=='Enter')this.form.submit()">
+      {% if not todos %}<input type=month name=mes value="{{mes}}" class=fon onchange=this.form.submit()>{% endif %}
+      <input name=q value="{{q}}" class="{{'fon' if q}}" placeholder="buscar favorecido…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if q or todos %}<a href="{{url_for('favorecidos')}}" class=muted>limpar</a>{% endif %}
     </form>
     <p class=muted style=margin:4px 0 12px>{{rows|length}} favorecidos · total <b class=neg>{{total|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
@@ -690,10 +691,10 @@ def transacoes():
       <a class="txtab{{' on' if not f_conta}}" href="{{url_for('transacoes',mes=mes,de=de,ate=ate,categoria=f_cat,status=f_status,q=q)}}">Todas</a>
     </div>
     <form class=filtros>
-      <input type=month name=mes value="{{mes}}" {{'disabled' if de or ate}} onchange=this.form.submit() title="mês (ignorado quando há intervalo de datas)">
-      <span class=daterange>de <input type=date name=de value="{{de}}" onchange=this.form.submit()> até <input type=date name=ate value="{{ate}}" onchange=this.form.submit()></span>
+      <input type=month name=mes value="{{mes}}" class="{{'fon' if not (de or ate)}}" {{'disabled' if de or ate}} onchange=this.form.submit() title="mês (ignorado quando há intervalo de datas)">
+      <span class=daterange>de <input type=date name=de value="{{de}}" class="{{'fon' if de}}" onchange=this.form.submit()> até <input type=date name=ate value="{{ate}}" class="{{'fon' if ate}}" onchange=this.form.submit()></span>
       {% if f_conta %}<input type=hidden name=conta value="{{f_conta}}">{% endif %}
-      <select name=categoria onchange=this.form.submit()><option value="">Categoria: todas</option>
+      <select name=categoria class="{{'fon' if f_cat}}" onchange=this.form.submit()><option value="">Categoria: todas</option>
         <option value="__sem__" {{'selected' if f_cat=='__sem__'}}>— sem categoria —</option>
         <optgroup label="Por nível">
           <option value="n1" {{'selected' if f_cat=='n1'}}>N1 — Comprometido</option>
@@ -702,9 +703,9 @@ def transacoes():
           <option value="n0" {{'selected' if f_cat=='n0'}}>N0 — neutro</option></optgroup>
         {% for g,names in cat_groups.items() %}<optgroup label="{{g}}">
           {% for nm in names %}<option {{'selected' if f_cat==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select>
-      <select name=status onchange=this.form.submit()><option value="">Status: todos</option>
+      <select name=status class="{{'fon' if f_status}}" onchange=this.form.submit()><option value="">Status: todos</option>
         {% for s in statuses %}<option {{'selected' if f_status==s}}>{{s}}</option>{% endfor %}</select>
-      <input name=q value="{{q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
+      <input name=q value="{{q}}" class="{{'fon' if q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
       {% if f_cat or f_status or q or de or ate %}<a href="{{url_for('transacoes',mes=mes,conta=f_conta)}}" class=muted>limpar</a>{% endif %}
     </form>
     <table id=tx class=txtbl>""" + TX_HEAD + """
