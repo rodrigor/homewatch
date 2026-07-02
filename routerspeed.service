@@ -1,0 +1,11 @@
+[Unit]
+Description=PIrrai — teste de velocidade por operadora (dual-WAN)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/home/rodrigor/homewatch/routerspeed.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=PIrrai — alertas do roteador (ER605) no Telegram
+After=network-online.target
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/home/rodrigor/homewatch/routerwatch_alerts.sh

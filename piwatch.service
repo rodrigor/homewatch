@@ -1,0 +1,10 @@
+[Unit]
+Description=PIrrai — coleta saúde do Raspberry Pi (CPU, temp, mem, throttling)
+After=multi-user.target
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/home/rodrigor/homewatch/piwatch.sh

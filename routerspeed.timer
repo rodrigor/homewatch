@@ -1,0 +1,9 @@
+[Unit]
+Description=Teste de velocidade Claro/Vivo a cada 6h
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+AccuracySec=2min
+Persistent=true
+[Install]
+WantedBy=timers.target

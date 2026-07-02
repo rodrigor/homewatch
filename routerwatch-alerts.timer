@@ -1,0 +1,8 @@
+[Unit]
+Description=Checa estado do roteador e alerta a cada minuto
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=10s
+[Install]
+WantedBy=timers.target
