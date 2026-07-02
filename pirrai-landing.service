@@ -1,0 +1,13 @@
+[Unit]
+Description=PIrrai — página inicial (links dos serviços)
+After=network-online.target
+[Service]
+Type=simple
+User=rodrigor
+Group=rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/usr/bin/python3 /home/rodrigor/homewatch/landing.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
