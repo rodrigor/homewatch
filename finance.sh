@@ -7,12 +7,25 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 DB="${FINANCE_DB:-$DIR/finance.db}"
 sq(){ sqlite3 "$DB" "$@"; }
 
-# reais -> centavos (aceita "45", "45,90", "45.90", "R$ 45,90", "-12,5")
+# reais -> centavos (aceita "45", "45,90", "45.90", "1.234,56", "R$ 45,90", "-12,5")
 to_cents(){
-  local v="${1//R\$/}"; v="${v// /}"; v="${v//./}"; v="${v//,/.}"
-  awk -v x="$v" 'BEGIN{ if(x=="" ){print "ERR"; exit} printf "%d\n", (x*100 + (x<0?-0.5:0.5)) }'
+  local v="${1//R\$/}"; v="${v// /}"
+  # só dígitos, sinal no início e separadores . ,  — senão ERR (nunca 0 silencioso)
+  [[ "$v" =~ ^[+-]?[0-9.,]+$ && "$v" =~ [0-9] ]] || { echo "ERR"; return; }
+  if [[ "$v" =~ ^([+-]?[0-9.,]*)\.([0-9]{1,2})$ ]]; then
+    # último separador é '.' com 1-2 casas: decimal estilo US ("45.90" = R$ 45,90)
+    local int="${BASH_REMATCH[1]//[.,]/}"
+    v="${int}.${BASH_REMATCH[2]}"
+  else
+    # pt-BR: '.' é milhar, ',' é decimal
+    v="${v//./}"; v="${v//,/.}"
+  fi
+  awk -v x="$v" 'BEGIN{ if(x==""){print "ERR"; exit} printf "%d\n", (x*100 + (x<0?-0.5:0.5)) }'
 }
 cents_fmt(){ awk -v c="$1" 'BEGIN{ printf "R$ %.2f", c/100 }' | sed 's/\./,/'; }
+# validação de argumentos interpolados em SQL (ids numéricos e mês YYYY-MM)
+req_int(){ [[ "${1:-}" =~ ^[0-9]+$ ]] || { echo "número inválido: ${1:-}"; exit 1; }; }
+req_month(){ [[ "${1:-}" =~ ^[0-9]{4}-[0-9]{2}$ ]] || { echo "mês inválido: ${1:-} (use YYYY-MM)"; exit 1; }; }
 
 init_db(){
   sq <<'SQL'
@@ -151,7 +164,7 @@ case "$cmd" in
     ;;
 
   limits)  # limits [YYYY-MM] : categoria|limite|gasto|pct
-    mon="${1:-$(date +%Y-%m)}"
+    mon="${1:-$(date +%Y-%m)}"; req_month "$mon"
     sq -separator '|' "SELECT b.category, b.limit_amount,
         COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0) AS spent,
         CASE WHEN b.limit_amount>0 THEN CAST(COALESCE((SELECT -SUM(amount) FROM transactions WHERE category=b.category AND amount<0 AND substr(date,1,7)='$mon'),0)*100/b.limit_amount AS INT) ELSE 0 END AS pct
@@ -163,7 +176,7 @@ case "$cmd" in
     ;;
 
   pending)  # lista transações sem categoria (id|data|valor|favorecido|descrição)
-    lim="${1:-40}"
+    lim="${1:-40}"; req_int "$lim"
     sq -separator '|' "SELECT id,date,printf('%.2f',amount/100.0),COALESCE(favorecido,''),COALESCE(description,'')
         FROM transactions WHERE category IS NULL OR category='' ORDER BY date DESC LIMIT $lim;"
     ;;
@@ -177,7 +190,7 @@ case "$cmd" in
     ;;
 
   excepcional)  # excepcional <id> <on|off>  — marca lançamento como despesa fora do normal
-    id="${1:?uso: excepcional <id> on|off}"; st="${2:-on}"; v=1; [ "$st" = "off" ] && v=0
+    id="${1:?uso: excepcional <id> on|off}"; req_int "$id"; st="${2:-on}"; v=1; [ "$st" = "off" ] && v=0
     sq "UPDATE transactions SET excepcional=$v WHERE id=$id;"
     echo "OK — #$id excepcional=$v"
     ;;
@@ -204,7 +217,7 @@ case "$cmd" in
       sq "UPDATE transactions SET recurrence=$val WHERE $where;"
       echo "OK — $cnt lançamentos ($cat_filter${fav_filter:+ / $fav_filter}) → recurrence=${freq}"
     else
-      id="${1:?uso: recurrence <id> <mensal|anual|trimestral|semanal|unico|->}"; freq="${2:?frequência}"
+      id="${1:?uso: recurrence <id> <mensal|anual|trimestral|semanal|unico|->}"; req_int "$id"; freq="${2:?frequência}"
       val="NULL"; [ "$freq" != "-" ] && val="'$(esc "$freq")'"
       sq "UPDATE transactions SET recurrence=$val WHERE id=$id;"
       echo "OK — #$id → recurrence=${freq}"
@@ -212,7 +225,7 @@ case "$cmd" in
     ;;
 
   setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento
-    id="${1:?uso: setcat <id> categoria}"; cat="${2:?categoria}"
+    id="${1:?uso: setcat <id> categoria}"; req_int "$id"; cat="${2:?categoria}"
     sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
         UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;"
     echo "OK — #$id → $cat"
@@ -256,7 +269,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     ;;
 
   groups)  # groups [YYYY-MM] : despesas agrupadas
-    mon="${1:-$(date +%Y-%m)}"
+    mon="${1:-$(date +%Y-%m)}"; req_month "$mon"
     echo "Despesas por grupo ($mon):"
     sq -separator '|' "SELECT COALESCE(c.grupo,'(sem grupo)'), printf('R\$ %.2f',-SUM(t.amount)/100.0)
         FROM transactions t LEFT JOIN categories c ON c.name=t.category
@@ -296,7 +309,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     ;;
 
   list)  # list [YYYY-MM]   (default: mês atual)
-    mon="${1:-$(date +%Y-%m)}"
+    mon="${1:-$(date +%Y-%m)}"; req_month "$mon"
     echo "id|data|valor|descrição|categoria|conta|status"
     sq -separator '|' "SELECT t.id,t.date, printf('R\$ %.2f',t.amount/100.0), COALESCE(t.description,''),
         COALESCE(t.category,'—'), COALESCE(a.name,'—'), t.status
@@ -305,7 +318,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     ;;
 
   categorize)  # categorize <id> <categoria>
-    id="${1:?uso: categorize <id> <categoria>}"; cat="${2:?categoria}"
+    id="${1:?uso: categorize <id> <categoria>}"; req_int "$id"; cat="${2:?categoria}"
     sq "UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;"
     echo "OK — #$id → $cat"
     ;;
@@ -315,7 +328,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     ;;
 
   summary)  # summary [YYYY-MM]
-    mon="${1:-$(date +%Y-%m)}"
+    mon="${1:-$(date +%Y-%m)}"; req_month "$mon"
     echo "Mês $mon (movimentações excluídas)"
     echo "Despesas: $(cents_fmt "$(sq "SELECT COALESCE(-SUM(amount),0) FROM transactions WHERE amount<0 AND substr(date,1,7)='$mon' AND $NOTRANSFER;")")"
     echo "Receitas: $(cents_fmt "$(sq "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE amount>0 AND substr(date,1,7)='$mon' AND $NOTRANSFER;")")"
@@ -327,6 +340,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
 
   nivel)  # nivel "<categoria>" <1|2|3|0>  — define o nível da categoria (0=movimentação/neutro)
     cat="${1:?uso: nivel \"categoria\" <0|1|2|3>}"; n="${2:?nivel 0-3}"
+    [[ "$n" =~ ^[0-3]$ ]] || { echo "nível inválido: $n (use 0-3)"; exit 1; }
     labels=("neutro/movimentação" "Comprometido" "Necessário variável" "Discricionário")
     sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
         UPDATE categories SET nivel=$n WHERE name='$(esc "$cat")';"
@@ -417,13 +431,14 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
   balance)  # balance [conta_id|nome]  — saldo atual de uma ou todas as contas
     conta_raw="${1:-}"
     if [ -n "$conta_raw" ]; then
-      where="WHERE a.CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(a.name) LIKE lower('%$(esc "$conta_raw")%')"
+      where="WHERE CAST(a.id AS TEXT)='$(esc "$conta_raw")' OR lower(a.name) LIKE lower('%$(esc "$conta_raw")%')"
     else
       where=""
     fi
     sq -separator '|' "SELECT a.name, COALESCE(a.currency,'BRL'),
       printf('%.2f',(COALESCE(a.opening_balance,0)+COALESCE(SUM(CASE WHEN t.currency=COALESCE(a.currency,'BRL') THEN t.amount_original ELSE t.amount END),0))/100.0)
       FROM accounts a LEFT JOIN transactions t ON t.account_id=a.id
+      $where
       GROUP BY a.id ORDER BY a.name;"
     ;;
 

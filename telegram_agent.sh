@@ -210,11 +210,12 @@ except: pass
         | python3 -c "
 import sys,json
 try:
+  ip=sys.argv[1]
   devs=json.load(sys.stdin).get('devices',[])
-  match=[d for d in devs if d.get('ip')=='$ip' and d.get('trusted') and d.get('name')]
+  match=[d for d in devs if d.get('ip')==ip and d.get('trusted') and d.get('name')]
   print(match[0]['name'] if match else '')
 except: print('')
-" 2>/dev/null || true)
+" "$ip" 2>/dev/null || true)
       if [ -n "$trusted_name" ]; then
         continue
       fi

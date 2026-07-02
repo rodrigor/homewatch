@@ -1,15 +1,15 @@
 # Revisão — telegram_agent.sh e finance.sh (2026-07-02)
 
 Achados de revisão automatizada (multi-agente), em ordem de gravidade por arquivo.
-Nenhum foi corrigido ainda — priorizar os marcados 🔴.
+**Os 🔴 (e o `balance`) foram corrigidos em 2026-07-02** — restam os 🟡/⚪.
 
 ## finance.sh
 
-- 🔴 **finance.sh:12-13 — bug de 100×**: `to_cents` remove TODOS os pontos antes de converter, então `add 45.90` lança **R$ 4.590,00** (o comentário promete aceitar "45.90"). Corrigir: tratar `.` como decimal quando for o último separador seguido de 1-2 dígitos.
-- 🔴 **finance.sh:13**: `to_cents` devolve `0` (não ERR) para entrada não numérica — `add abc "x"` insere transação de R$ 0,00 em silêncio. Validar com regex antes do awk.
-- 🔴 **finance.sh:168, 181, 209, 217, 254, 304, 309, 320-325, 332**: `$id`, `$lim`, `$mon`, `$n` interpolados no SQL sem `esc()` nem validação — injeção SQL via CLI. Validar `[[ $id =~ ^[0-9]+$ ]]` etc. no topo de cada comando.
-- 🔴 **finance.sh:333**: `${labels[$n]}` com `$n` não validado — índice de array passa por avaliação aritmética do bash (execução de comando via `nivel cat 'a[$(cmd)]'`). Coberto pela validação numérica acima.
-- 🟡 **finance.sh:419-427**: comando `balance <conta>` — `where` é montada mas nunca usada (sempre lista todas) e o SQL dela é inválido (`a.CAST(id AS TEXT)`).
+- ✅ ~~🔴 **finance.sh:12-13 — bug de 100×**~~ CORRIGIDO: `to_cents` agora trata `.` como decimal quando é o último separador com 1-2 casas (`45.90` → R$ 45,90); pt-BR (`1.234,56`) segue ok. 15 casos testados.
+- ✅ ~~🔴 **finance.sh:13**: `to_cents` devolvia 0 para não numérico~~ CORRIGIDO: valida com regex e devolve `ERR` (todos os callers já tratavam ERR).
+- ✅ ~~🔴 injeção SQL via `$id`/`$lim`/`$mon`/`$n`~~ CORRIGIDO: `req_int`/`req_month` em pending, excepcional, recurrence, setcat, categorize, limits, groups, list, summary; `nivel` valida `^[0-3]$`.
+- ✅ ~~🔴 **finance.sh:333**: `${labels[$n]}` avaliação aritmética~~ CORRIGIDO pela validação `^[0-3]$` de `$n`.
+- ✅ ~~🟡 **finance.sh:419-427**: `balance <conta>` quebrado~~ CORRIGIDO: `CAST(a.id AS TEXT)` e `$where` interpolado na query — o filtro por conta funciona.
 - 🟡 **finance.sh:204, 209**: `recurrence` faz UPDATE numa coluna que nenhuma migração cria — falha com "no such column" a menos que o web app a tenha criado.
 - 🟡 **finance.sh:8**: `sq()` sem busy timeout; com o Flask no mesmo `finance.db`, escrita concorrente falha com "database is locked" e o erro é engolido. Usar `sqlite3 -cmd '.timeout 5000'`.
 - 🟡 **finance.sh:292-295, 217, 309, 413**: retorno do `sq` ignorado — imprime "OK #..." mesmo quando o INSERT falhou (Claude confirma lançamento que não existe).
@@ -19,7 +19,7 @@ Nenhum foi corrigido ainda — priorizar os marcados 🔴.
 
 ## telegram_agent.sh
 
-- 🔴 **telegram_agent.sh:214**: injeção de código — `$ip` (saída do arp-scan) interpolado dentro de `python3 -c`. Passar via `sys.argv`.
+- ✅ ~~🔴 **telegram_agent.sh:214**: injeção de código via `$ip` em `python3 -c`~~ CORRIGIDO: `$ip` agora passa por `sys.argv[1]`.
 - 🟡 **telegram_agent.sh:376-377, 559**: loop principal não trata `ok:false` da API (ex.: HTTP 409 de instância duplicada) → busy-loop sem backoff.
 - 🟡 **telegram_agent.sh:100-101, 156-157**: retorno do `lp` ignorado e `rm -f "$tmp"` incondicional — se a impressão falha, o arquivo é apagado em silêncio (process_print_queue:120 já faz certo).
 - 🟡 **telegram_agent.sh:20-35, 60, 83, 149, 183, 209, 364, 453**: `curl` sem `--max-time`/`--retry` (exceto getUpdates) — um hang em `tg()` congela o agente inteiro.
