@@ -73,8 +73,21 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(rules);"         | grep -q '|amt_max|'    || sq "ALTER TABLE rules ADD COLUMN amt_max INTEGER;"
   sq "PRAGMA table_info(rules);"         | grep -q '|dom|'        || sq "ALTER TABLE rules ADD COLUMN dom INTEGER;"
   sq "PRAGMA table_info(favorecidos);"   | grep -q '|recorrente|' || sq "ALTER TABLE favorecidos ADD COLUMN recorrente INTEGER DEFAULT 0;"
-  sq "PRAGMA table_info(categories);"   | grep -q '|nivel|'      || sq "ALTER TABLE categories ADD COLUMN nivel INTEGER DEFAULT 0;"
+  sq "PRAGMA table_info(categories);"   | grep -q '|nivel|'           || sq "ALTER TABLE categories ADD COLUMN nivel INTEGER DEFAULT 0;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|transfer_pair_id|'|| sq "ALTER TABLE transactions ADD COLUMN transfer_pair_id INTEGER;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|tx_type|'         || sq "ALTER TABLE transactions ADD COLUMN tx_type TEXT DEFAULT 'normal';"
+  sq "PRAGMA table_info(transactions);" | grep -q '|amount_original|' || sq "ALTER TABLE transactions ADD COLUMN amount_original INTEGER;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|fx_rate|'         || sq "ALTER TABLE transactions ADD COLUMN fx_rate REAL;"
+  sq "PRAGMA table_info(transactions);" | grep -q '|currency|'        || sq "ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT 'BRL';"
+  sq "PRAGMA table_info(accounts);"     | grep -q '|opening_balance|' || sq "ALTER TABLE accounts ADD COLUMN opening_balance INTEGER DEFAULT 0;"
+  sq "PRAGMA table_info(accounts);"     | grep -q '|currency|'        || sq "ALTER TABLE accounts ADD COLUMN currency TEXT DEFAULT 'BRL';"
   sq "CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY, value TEXT);"
+  sq "CREATE TABLE IF NOT EXISTS account_valuations(
+    id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, date TEXT NOT NULL,
+    value INTEGER NOT NULL, currency TEXT DEFAULT 'BRL', notes TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')));"
+  sq "INSERT OR IGNORE INTO categories(name,icon,color,grupo,nivel,rule_keywords)
+      VALUES('Rendimento','📈','#1b5e20','Receitas',0,'[]');"
 }
 # cláusula SQL: exclui categorias marcadas como movimentação (não-gasto/não-receita)
 NOTRANSFER="COALESCE(category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
@@ -167,6 +180,35 @@ case "$cmd" in
     id="${1:?uso: excepcional <id> on|off}"; st="${2:-on}"; v=1; [ "$st" = "off" ] && v=0
     sq "UPDATE transactions SET excepcional=$v WHERE id=$id;"
     echo "OK — #$id excepcional=$v"
+    ;;
+
+  recurrence)  # recurrence <id|--cat categoria [--fav favorecido]> <mensal|anual|trimestral|semanal|unico|->
+    # Uso 1: recurrence <id> <frequência>         → marca UM lançamento
+    # Uso 2: recurrence --cat <cat> [--fav <fav>] <frequência> → marca todos do padrão
+    # frequência "-" remove o valor
+    if [ "${1:-}" = "--cat" ]; then
+      shift
+      cat_filter="${1:?categoria}"; shift
+      fav_filter=""; freq=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --fav) fav_filter="$2"; shift 2 ;;
+          *) freq="$1"; shift ;;
+        esac
+      done
+      freq="${freq:?frequência}"
+      val="NULL"; [ "$freq" != "-" ] && val="'$(esc "$freq")'"
+      where="category='$(esc "$cat_filter")'"
+      [ -n "$fav_filter" ] && where+=" AND favorecido LIKE '%$(esc "$fav_filter")%'"
+      cnt=$(sq "SELECT COUNT(*) FROM transactions WHERE $where;")
+      sq "UPDATE transactions SET recurrence=$val WHERE $where;"
+      echo "OK — $cnt lançamentos ($cat_filter${fav_filter:+ / $fav_filter}) → recurrence=${freq}"
+    else
+      id="${1:?uso: recurrence <id> <mensal|anual|trimestral|semanal|unico|->}"; freq="${2:?frequência}"
+      val="NULL"; [ "$freq" != "-" ] && val="'$(esc "$freq")'"
+      sq "UPDATE transactions SET recurrence=$val WHERE id=$id;"
+      echo "OK — #$id → recurrence=${freq}"
+    fi
     ;;
 
   setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento
@@ -303,5 +345,87 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     fi
     ;;
 
-  *) echo "uso: finance.sh {init|accounts|add|list|categorize|autocat|summary|nivel|config}";;
+  transfer-add)  # transfer-add <de> <para> <valor_de> [valor_para] [data] [desc]
+    # Cria par de lançamentos vinculados. Para moedas diferentes, informe valor_para.
+    de_raw="${1:?uso: transfer-add <de> <para> <valor_de> [valor_para] [data] [desc]}"; para_raw="${2:?para}"; val_de="${3:?valor}"
+    val_para="${4:-}"; dt="${5:-$(date +%F)}"; desc="${6:-Transferência}"
+    # resolve contas por id ou nome (parcial)
+    de_id=$(sq   "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$de_raw")'   OR lower(name) LIKE lower('%$(esc "$de_raw")%')   LIMIT 1;")
+    para_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$para_raw")' OR lower(name) LIKE lower('%$(esc "$para_raw")%') LIMIT 1;")
+    [ -z "$de_id"   ] && { echo "Conta não encontrada: $de_raw";   exit 1; }
+    [ -z "$para_id" ] && { echo "Conta não encontrada: $para_raw"; exit 1; }
+    de_cur=$(sq   "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$de_id;")
+    para_cur=$(sq "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$para_id;")
+    de_name=$(sq   "SELECT name FROM accounts WHERE id=$de_id;")
+    para_name=$(sq "SELECT name FROM accounts WHERE id=$para_id;")
+    cents_de=$(to_cents "$val_de"); [ "$cents_de" = "ERR" ] && { echo "valor inválido"; exit 1; }; cents_de=${cents_de#-}
+    if [ "$de_cur" = "$para_cur" ]; then
+      cents_para=$cents_de; fx_de=1; fx_para=1; orig_de=$cents_de; orig_para=$cents_de
+    else
+      [ -z "$val_para" ] && { echo "Contas em moedas diferentes ($de_cur→$para_cur). Informe também o valor na conta destino."; exit 1; }
+      cents_para=$(to_cents "$val_para"); [ "$cents_para" = "ERR" ] && { echo "valor_para inválido"; exit 1; }; cents_para=${cents_para#-}
+      # fx_rate = unidades_de / unidades_para (e.g. BRL/USD)
+      fx_rate=$(awk "BEGIN{printf \"%.6f\", $cents_de/$cents_para}")
+      orig_de=$cents_de; orig_para=$cents_para
+      # amount (BRL-equiv): se de=BRL usamos cents_de; se para=BRL usamos cents_para; senão cents_de
+      if [ "$de_cur" = "BRL" ]; then cents_de_brl=$cents_de; cents_para_brl=$cents_de
+      elif [ "$para_cur" = "BRL" ]; then cents_de_brl=$cents_para; cents_para_brl=$cents_para
+      else cents_de_brl=$cents_de; cents_para_brl=$cents_de; fi
+      cents_de=$cents_de_brl; cents_para=$cents_para_brl; fx_de=$fx_rate; fx_para=$fx_rate
+    fi
+    # insere débito
+    id_d=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate)
+      VALUES('$(esc "$dt")',-$cents_de,'$(esc "$desc")','Transferência própria',$de_id,'manual','confirmado','transfer','$de_cur',-$orig_de,$fx_de);
+      SELECT last_insert_rowid();")
+    # insere crédito
+    id_c=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate,transfer_pair_id)
+      VALUES('$(esc "$dt")',$cents_para,'$(esc "$desc")','Transferência própria',$para_id,'manual','confirmado','transfer','$para_cur',$orig_para,$fx_para,$id_d);
+      SELECT last_insert_rowid();")
+    # vincula débito ao crédito
+    sq "UPDATE transactions SET transfer_pair_id=$id_c WHERE id=$id_d;"
+    echo "OK — Transferência: $(cents_fmt $cents_de) $de_cur  $de_name → $para_name  (#$id_d ↔ #$id_c)"
+    ;;
+
+  rendimento)  # rendimento <conta> <valor> [data] [desc]
+    # Valor positivo = rendimento; negativo = perda/depreciação
+    conta_raw="${1:?uso: rendimento <conta> <valor> [data] [desc]}"; val="${2:?valor}"
+    dt="${3:-$(date +%F)}"; desc="${4:-Rendimento}"
+    conta_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(name) LIKE lower('%$(esc "$conta_raw")%') LIMIT 1;")
+    [ -z "$conta_id" ] && { echo "Conta não encontrada: $conta_raw"; exit 1; }
+    conta_cur=$(sq "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$conta_id;")
+    conta_name=$(sq "SELECT name FROM accounts WHERE id=$conta_id;")
+    cents=$(to_cents "$val"); [ "$cents" = "ERR" ] && { echo "valor inválido"; exit 1; }
+    id=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate)
+      VALUES('$(esc "$dt")',$cents,'$(esc "$desc")','Rendimento',$conta_id,'manual','confirmado','rendimento','$conta_cur',$cents,1);
+      SELECT last_insert_rowid();")
+    tipo=$( [ "${cents:0:1}" = "-" ] && echo "perda" || echo "rendimento" )
+    echo "OK #$id — $tipo: $(cents_fmt ${cents#-}) $conta_cur em $conta_name · $dt"
+    ;;
+
+  valuation)  # valuation <conta> <valor> [data] [notas]
+    # Snapshot do valor de mercado atual da conta (para acompanhamento)
+    conta_raw="${1:?uso: valuation <conta> <valor> [data] [notas]}"; val="${2:?valor}"
+    dt="${3:-$(date +%F)}"; notas="${4:-}"
+    conta_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(name) LIKE lower('%$(esc "$conta_raw")%') LIMIT 1;")
+    [ -z "$conta_id" ] && { echo "Conta não encontrada: $conta_raw"; exit 1; }
+    conta_cur=$(sq "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$conta_id;")
+    cents=$(to_cents "$val"); [ "$cents" = "ERR" ] && { echo "valor inválido"; exit 1; }; cents=${cents#-}
+    sq "INSERT INTO account_valuations(account_id,date,value,currency,notes) VALUES($conta_id,'$(esc "$dt")',$cents,'$conta_cur','$(esc "$notas")');"
+    echo "OK — snapshot: $(cents_fmt $cents) $conta_cur · $dt"
+    ;;
+
+  balance)  # balance [conta_id|nome]  — saldo atual de uma ou todas as contas
+    conta_raw="${1:-}"
+    if [ -n "$conta_raw" ]; then
+      where="WHERE a.CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(a.name) LIKE lower('%$(esc "$conta_raw")%')"
+    else
+      where=""
+    fi
+    sq -separator '|' "SELECT a.name, COALESCE(a.currency,'BRL'),
+      printf('%.2f',(COALESCE(a.opening_balance,0)+COALESCE(SUM(CASE WHEN t.currency=COALESCE(a.currency,'BRL') THEN t.amount_original ELSE t.amount END),0))/100.0)
+      FROM accounts a LEFT JOIN transactions t ON t.account_id=a.id
+      GROUP BY a.id ORDER BY a.name;"
+    ;;
+
+  *) echo "uso: finance.sh {init|accounts|add|list|categorize|autocat|summary|nivel|config|transfer-add|rendimento|valuation|balance}";;
 esac

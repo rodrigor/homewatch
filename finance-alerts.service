@@ -1,0 +1,10 @@
+[Unit]
+Description=PIrrai — checa limites de gastos e alerta no Telegram
+After=network-online.target
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/home/rodrigor/homewatch/finance_alerts.sh

@@ -96,24 +96,34 @@ def reconcile(con, txns, account=None):
         if t["fitid"] and con.execute("SELECT 1 FROM transactions WHERE external_id=?", (t["fitid"],)).fetchone():
             dup += 1; continue
         cand = con.execute(
-            """SELECT id FROM transactions WHERE amount=? AND source<>'ofx' AND external_id IS NULL
+            """SELECT id, email_hint_category, email_hint_nivel FROM transactions
+               WHERE amount=? AND source<>'ofx' AND external_id IS NULL
                AND ABS(julianday(date)-julianday(?))<=2
                ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1""",
             (t["cents"], t["date"], t["date"])).fetchone()
         if cand:
-            con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
-                           account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?) WHERE id=?""",
-                        (t["fitid"], acc_id, t.get("favorecido"), cand[0]))
+            cand_id, hint_cat, hint_nivel = cand[0], cand[1], cand[2]
+            # Se veio de e-mail com hint de categoria, garantir que categoria e nivel estão corretos
+            if hint_cat:
+                # preenche a categoria da categoria sugerida pelo e-mail na conciliação
+                con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
+                               account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?),
+                               category=? WHERE id=?""",
+                            (t["fitid"], acc_id, t.get("favorecido"), hint_cat, cand_id))
+            else:
+                con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
+                               account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?) WHERE id=?""",
+                            (t["fitid"], acc_id, t.get("favorecido"), cand_id))
             matched += 1
         else:
             _d = int(t["date"][8:10]) if t.get("date") else None
-            cat = finance_rules.classify(con, t.get("favorecido"), t.get("description"), None, t["cents"], _d)
+            cat, sfav = finance_rules.classify_full(con, t.get("favorecido"), t.get("description"), None, t["cents"], _d, acc_id)
             memo_u = (t.get("memo") or "").upper()
             if t["cents"] > 0 and t.get("description") == "recebido via PIX" and ("BCO DO BRASIL" in memo_u or "BANCO DO BRASIL" in memo_u):
                 cat = "Receitas"   # Pix recebido do Banco do Brasil = receita (renda entrando)
             con.execute("""INSERT INTO transactions(date,time,amount,description,favorecido,category,account_id,source,status,external_id,notes)
                            VALUES(?,?,?,?,?,?,?,'ofx','importado',?,?)""",
-                        (t["date"], t.get("time"), t["cents"], t.get("description"), t.get("favorecido"), cat, acc_id, t["fitid"], t.get("memo")))
+                        (t["date"], t.get("time"), t["cents"], t.get("description"), (t.get("favorecido") or sfav), cat, acc_id, t["fitid"], t.get("memo")))
             imported += 1
     con.commit()
     return matched, imported, dup

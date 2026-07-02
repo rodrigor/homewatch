@@ -1,0 +1,8 @@
+[Unit]
+Description=Checa limites de gastos de hora em hora
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+AccuracySec=5min
+[Install]
+WantedBy=timers.target
