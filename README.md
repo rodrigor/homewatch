@@ -1,43 +1,51 @@
 # homewatch 🏠🤖
 
-Assistente doméstico inteligente rodando em Raspberry Pi — integra Pi-hole/DNS, Telegram e Claude AI para controle total da rede e da casa via chat.
+Plataforma de automação pessoal rodando num **Raspberry Pi 4** — integra rede
+(Pi-hole/roteador), finanças, agenda, hábitos e mais, tudo controlável pelo
+Telegram com o **Claude CLI** como cérebro.
 
 ---
 
 ## Propósito
 
-O **PIrrai** (apelido do bot) é um agente de automação residencial que transforma o Raspberry Pi em um assistente acessível 24/7 pelo Telegram. Com ele é possível:
+O **PIrrai** (apelido do bot) transforma o Raspberry Pi num assistente
+doméstico 24/7. O que começou como monitor de rede virou uma plataforma pessoal
+com vários módulos independentes, todos acessíveis por chat no Telegram e/ou por
+dashboards web (expostos via Tailscale).
 
-- 🔍 **Monitorar a rede** — detecta dispositivos novos, identifica fabricantes e catalogar o inventário
-- 🛡️ **Controlar o Pi-hole** — consultar DNS, bloqueios e estatísticas
-- 🖨️ **Imprimir remotamente** — envie PDF ou foto pelo Telegram e a impressora imprime
-- ⏰ **Lembretes inteligentes** — por horário ou quando um familiar chega em casa (presença na rede)
-- 💬 **Mensagens para as filhas** — recados direto no Telegram de cada uma
-- 💪 **Coach de hábitos** — acompanha metas semanais com nudges e revisão automática
-- 🎙️ **Voz bidirecional** — transcreve áudio (Whisper) e responde em voz (TTS)
+- 🔍 **Rede** — detecta dispositivos novos, identifica fabricantes, cataloga o inventário
+- 🛡️ **Pi-hole** — consulta DNS, bloqueios e estatísticas
+- 📡 **Roteador** — coletor SNMPv3 do ER605 dual-WAN (Claro/Vivo) + speedtest por operadora → Grafana
+- 💰 **Finanças** — importa OFX/e-mails de compra, classifica por regras, split composto, dashboard web
+- 📅 **Agenda** — unifica Google Calendar (iCal) + Todoist, acha horários livres
+- 💪 **Hábitos** — metas semanais, nudges, revisão automática + dashboard (VO2, peso, exercício)
+- 🖨️ **Impressão remota** — envie PDF/foto pelo Telegram e a impressora imprime
+- ⏰ **Lembretes** — por horário ou por presença (quando um familiar chega na rede)
+- 💬 **Filhas** — recados e nudges de bem-estar no Telegram de cada uma
+- 📺 **Extras** — acompanhamento de séries, digest da Copa 2026, voz bidirecional (Whisper + TTS)
 
 ---
 
 ## Infraestrutura
 
-### Hardware
-- **Raspberry Pi** (ARM64) — servidor doméstico permanente na rede local
-
-### Sistema Operacional
-- **Debian 13 (Trixie)**
+- **Hardware:** Raspberry Pi 4 (ARM64), servidor doméstico permanente
+- **SO:** Debian 13 (Trixie)
+- **Rede:** exposição dos dashboards via **Tailscale** (`pirrai.tail*.ts.net`)
 
 ### Componentes de Software
 
 | Componente | Função |
 |---|---|
-| **Pi-hole** | DNS + bloqueio de anúncios; banco `pihole-FTL.db` para histórico DNS |
-| **Claude AI** (Anthropic) | Cérebro do assistente — `claude` CLI em modo `--print` com `--system-prompt` |
+| **Claude CLI** (Anthropic) | Cérebro do assistente — modo `--print` com `--system-prompt` |
 | **Telegram Bot API** | Interface de chat (long polling) |
-| **Flask / Python 3** | API REST para inventário de dispositivos (`localhost:8080`) |
-| **SQLite** | Banco de dados do inventário (`web/devices.db`) |
-| **Whisper** | Transcrição local de mensagens de voz |
+| **Flask / Python 3** | APIs e dashboards (finanças, hábitos, inventário, landing) |
+| **SQLite** | Bancos: `finance.db`, `web/devices.db`, `routerwatch.db`, `bgstats.db` |
+| **Pi-hole** | DNS + bloqueio de anúncios; `pihole-FTL.db` para histórico DNS |
+| **SNMP / speedtest-ookla** | Telemetria do roteador ER605 dual-WAN |
+| **Grafana** | Painéis de rede/Pi (lê `routerwatch.db`) |
+| **Whisper / TTS (Piper)** | Transcrição e síntese de voz |
 | **arp-scan / nmap** | Varredura de rede para detecção de dispositivos |
-| **systemd** | Gerenciamento dos serviços (sempre online, auto-restart) |
+| **systemd** | Serviços e timers (sempre online, auto-restart) |
 
 ---
 
@@ -46,58 +54,52 @@ O **PIrrai** (apelido do bot) é um agente de automação residencial que transf
 ```
 Telegram ──→ telegram_agent.sh ──→ claude CLI (--system-prompt PIrrai)
                   │                        │
-                  │                  Bash tools (arp-scan, sqlite3,
-                  │                  curl, systemctl, nmap, lp...)
+                  │                  Bash tools (arp-scan, sqlite3, curl,
+                  │                  systemctl, nmap, lp, finance.sh, agenda.sh...)
                   │
-                  ├──→ investigate.sh    (identifica dispositivos)
-                  ├──→ notify_kids.sh    (mensagens para as filhas)
-                  ├──→ reminder_add.sh   (cria lembretes)
-                  ├──→ habit.sh          (registra e consulta hábitos)
-                  └──→ web/app.py ←──── API REST (inventário)
-                            │
-                        Pi-hole DB + devices.db (SQLite)
+     ┌────────────┼───────────────┬─────────────┬──────────────┐
+  investigate  finance.sh       agenda.sh    habit.sh      notify_kids
+  (dispos.)   (OFX/regras)   (gcal+todoist)  (metas)        (filhas)
+                  │                                              │
+        Flask dashboards (Tailscale) ──── landing.py (índice de serviços)
+        ├─ web/finance/app.py  :8443  (finance.db)
+        ├─ web/habitos/app.py  :8444
+        └─ web/app.py          :8080  (inventário → Pi-hole + devices.db)
+
+Coletores (systemd timers) → routerwatch.db → Grafana
+  routerwatch.sh (SNMP)  routerspeed.sh (speedtest)  piwatch.sh (saúde do Pi)
 ```
 
 ---
 
-## Estrutura do Projeto
+## Módulos
 
-```
-homewatch/
-├── telegram_agent.sh       # Loop principal: Telegram → Claude (admin + filhas)
-├── investigate.sh          # Identifica dispositivos: OUI, DNS, nmap, SMB
-├── habit.sh                # CRUD de hábitos pessoais (metas, log, status)
-├── habit_coach.sh          # Gera nudge de ritmo via Claude
-├── habit_analyze.sh        # Revisão semanal de hábitos via Claude
-├── notify_kids.sh          # Envia mensagem para filha(s) via Telegram
-├── reminder_add.sh         # Cria lembretes (time ou presence)
-├── kid_handler.sh          # Responde filhas (Claude em modo criança)
-├── kid_nudge.sh            # Nudge de bem-estar para filhas
-├── screen_usage.sh         # Monitora tempo de tela
-├── collect.sh              # Coleta métricas de rede
-├── report.sh               # Gera relatório de atividade
-├── parent_summary.sh       # Resumo parental
-├── email_watch.py          # Monitora e-mail via IMAP
-├── transcribe.sh           # Transcrição de áudio (Whisper)
-├── tts.sh                  # Text-to-speech (resposta em voz)
-├── get_chat_id.sh          # Descobre o chat_id do Telegram
-├── homewatch-agent.service # Serviço systemd do agente Telegram
-├── config.env.example      # Template de configuração (sem segredos)
-└── web/
-    ├── app.py              # API Flask — inventário de dispositivos
-    └── homewatch-web.service  # Serviço systemd da API web
-```
-
----
-
-## Serviços systemd
-
-| Serviço | Porta | Restart |
+| Módulo | Scripts principais | Descrição |
 |---|---|---|
-| `homewatch-agent` | — | Sempre (delay 5s) |
-| `homewatch-web` | `8080` (local) | Sempre (delay 5s) |
+| **Telegram/Agente** | `telegram_agent.sh` | Loop principal Telegram → Claude (admin + filhas) |
+| **Rede** | `investigate.sh`, `collect.sh`, `web/app.py` | Inventário de dispositivos, OUI/DNS/nmap |
+| **Finanças** | `finance.sh`, `ofx_parser.py`, `finance_rules.py`, `finance_email.py`, `web/finance/app.py` | Importação OFX/e-mail, engine de regras, split composto, dashboard |
+| **Agenda** | `agenda.py`/`agenda.sh`, `gcal.py`, `todoist.sh` | Google Calendar (iCal, leitura) + Todoist; horários livres |
+| **Hábitos** | `habit*.sh`, `web/habitos/app.py` | CRUD de metas, nudges, revisão semanal, dashboard |
+| **Roteador** | `routerwatch.sh`, `routerspeed.sh`, `routerwatch_alerts.sh`, `piwatch.sh` | Telemetria SNMP dual-WAN + speedtest + saúde do Pi → Grafana |
+| **Filhas** | `kid_handler.sh`, `kid_nudge.sh`, `notify_kids.sh`, `screen_usage.sh` | Chat/nudges/tempo de tela das crianças |
+| **Extras** | `series.sh`, `check_new_episodes.sh`, `copa_digest.sh`, `transcribe.sh`, `tts.sh`, `landing.py` | Séries, Copa 2026, voz, página inicial |
+| **Infra** | `service_health.sh`, `homewatch-watchdog.sh`, `finance_backup.sh` | Watchdog, auto-restart e backups |
 
-Ambos iniciam automaticamente com a rede e o Pi-hole.
+---
+
+## Serviços & timers systemd
+
+| Unit | Tipo | Função |
+|---|---|---|
+| `homewatch-agent` | serviço | Agente Telegram (sempre on) |
+| `homewatch-web` / `finance-web` / `pirrai-landing` | serviço | Dashboards Flask (:8080 / :8443 / :8087) |
+| `homewatch-watchdog`, `service_health` | serviço/timer | Watchdog dos serviços |
+| `agenda-morning` | timer | Resumo matinal da agenda |
+| `email-watch`, `finance-email`, `finance-alerts`, `finance-backup` | timers | Ingestão de e-mail, alertas e backup de finanças |
+| `routerwatch`, `routerspeed`, `routerwatch-alerts`, `piwatch` | timers | Coleta de telemetria de rede/Pi |
+
+> Dashboards ficam em `127.0.0.1` e são publicados na rede privada via `tailscale serve`.
 
 ---
 
@@ -106,45 +108,43 @@ Ambos iniciam automaticamente com a rede e o Pi-hole.
 ### 1. Pré-requisitos
 
 ```bash
-# Claude CLI (Anthropic)
-npm install -g @anthropic-ai/claude-code   # ou conforme documentação oficial
-
-# Dependências Python
-pip3 install flask
-
-# Ferramentas de rede
-sudo apt install arp-scan nmap
+npm install -g @anthropic-ai/claude-code   # Claude CLI (Anthropic)
+pip3 install flask python-dateutil         # deps Python
+sudo apt install arp-scan nmap snmp        # ferramentas de rede
 ```
 
-### 2. Configurar variáveis
+### 2. Configurar segredos
+
+Cada módulo tem seu `*.env` (nunca commitado — ver `.gitignore`). Copie do
+`.example` correspondente e preencha:
 
 ```bash
-cp config.env.example config.env
-nano config.env   # preencha TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, CLAUDE_MODEL
+cp config.env.example config.env       # Telegram/Claude (núcleo)
+cp finance.env.example finance.env     # IMAP de finanças
+cp agenda.env.example agenda.env       # iCal do Google Calendar
+cp gcal.env.example gcal.env           # OAuth do Google Calendar
+# routerwatch.env, todoist.env, gcal_client.json: credenciais específicas
+chmod 600 *.env
 ```
 
-### 3. Registrar filhas (opcional)
+### 3. Ativar serviços
 
 ```bash
-# kids/registry.txt — uma linha por filha: chat_id NomeDaFilha
-echo "987654321 Gabi" >> kids/registry.txt
-echo "123456789 Ana"  >> kids/registry.txt
-```
-
-### 4. Ativar serviços
-
-```bash
-sudo cp homewatch-agent.service /etc/systemd/system/
-sudo cp web/homewatch-web.service /etc/systemd/system/
+sudo cp *.service *.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now homewatch-agent homewatch-web
+sudo systemctl enable --now homewatch-agent homewatch-web finance-web
+# timers de coleta/alertas:
+sudo systemctl enable --now routerwatch.timer routerspeed.timer piwatch.timer \
+     finance-email.timer finance-alerts.timer agenda-morning.timer
 ```
+
+> No Pi, os units em `/etc/systemd/system/` são **symlinks** para este repositório.
 
 ---
 
 ## API do Inventário
 
-`POST http://localhost:8080/api/device/{MAC}`
+`POST http://localhost:8080/api/device/{MAC}` (autenticado por token)
 
 ```json
 {
@@ -158,7 +158,9 @@ sudo systemctl enable --now homewatch-agent homewatch-web
 }
 ```
 
-Tipos aceitos: `celular`, `notebook`, `desktop`, `tablet`, `TV`, `smart speaker`, `camera`, `IoT`, `console`, `NAS`, `impressora`, `roteador/rede`, `relogio`, `eletrodomestico`, `outro`.
+Tipos aceitos: `celular`, `notebook`, `desktop`, `tablet`, `TV`, `smart speaker`,
+`camera`, `IoT`, `console`, `NAS`, `impressora`, `roteador/rede`, `relogio`,
+`eletrodomestico`, `outro`.
 
 ---
 
@@ -167,20 +169,19 @@ Tipos aceitos: `celular`, `notebook`, `desktop`, `tablet`, `TV`, `smart speaker`
 | Comando | Ação |
 |---|---|
 | `/reset` ou `/novo` | Reinicia o contexto da conversa |
-| `/opus` | Muda para modelo Claude Opus (mais raciocínio) |
-| `/sonnet` | Volta ao modelo padrão (Sonnet) |
-| `/haiku` | Modo rápido (Haiku) |
+| `/opus` `/sonnet` `/haiku` | Troca o modelo Claude |
 | `opus: pergunta` | Usa Opus só para esta mensagem |
 | Enviar PDF/foto | Imprime na impressora local |
+| Enviar áudio | Transcreve (Whisper) e responde |
 
 ---
 
 ## Segurança
 
-- Acesso restrito por `chat_id` do Telegram — apenas o admin (Rodrigo) e filhas registradas
-- `config.env` e credenciais **nunca** commitados (ver `.gitignore`)
-- API web acessível apenas localmente (`127.0.0.1:8080`)
-- Autenticação por token no endpoint da API
+- Acesso restrito por `chat_id` do Telegram — só o admin (Rodrigo) e filhas registradas
+- Segredos (`*.env`, `*.json`, `.secret`, `finance.db`) **nunca** commitados (ver `.gitignore`)
+- Dashboards em `127.0.0.1`, publicados só na rede privada Tailscale
+- Autenticação por token/sessão nos endpoints web
 
 ---
 
