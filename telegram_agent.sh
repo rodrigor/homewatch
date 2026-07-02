@@ -7,6 +7,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/config.env"
 export PATH="$HOME/.local/bin:$PATH"
 export HOME="${HOME:-/home/rodrigor}"
+# nota: o token na URL fica visível em `ps` (argv do curl) — risco aceito:
+# host single-user; mover p/ --config custaria legibilidade sem ganho real aqui
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 STATE="$DIR/state"
 SESSION_FLAG="$STATE/agent_session_active"
@@ -16,8 +18,16 @@ get_model(){ cat "$MODEL_FILE" 2>/dev/null || echo "${CLAUDE_MODEL:-sonnet}"; }
 WORKDIR="$DIR/agentwork"   # sessão isolada do agente (não colide com a sessão interativa em /home/rodrigor)
 mkdir -p "$STATE"
 
+# mata heartbeat/status órfãos quando o script morre (kill do systemd, set -u etc.)
+cleanup(){ [ -n "${HBPID:-}" ] && kill "$HBPID" 2>/dev/null; [ -n "${STATPID:-}" ] && kill "$STATPID" 2>/dev/null; }
+trap cleanup EXIT
+
+# lookup do chat_id de uma filha pelo nome (registry: "chat_id Nome" por linha)
+kid_chat_id(){ awk -v n="$1" 'tolower($2)==tolower(n){print $1;exit}' "$DIR/kids/registry.txt" 2>/dev/null; }
+
+# timeouts: envio sem --retry (retry em POST poderia duplicar mensagem); um hang não congela mais o loop
 tg(){ # tg <chat_id> <texto>  (texto puro — mensagens do sistema)
-  curl -s -X POST "$API/sendMessage" \
+  curl -s --max-time 15 -X POST "$API/sendMessage" \
     --data-urlencode "chat_id=$1" \
     --data-urlencode "text=$2" \
     --data-urlencode "disable_web_page_preview=true" >/dev/null
@@ -25,14 +35,14 @@ tg(){ # tg <chat_id> <texto>  (texto puro — mensagens do sistema)
 tg_html(){ # tg_html <chat_id> <texto_html>  (respostas do Claude com parse_mode=HTML)
   # se o Telegram rejeitar o HTML (tag quebrada etc.), reenvia como texto puro p/ não perder a mensagem
   local ok
-  ok=$(curl -s -X POST "$API/sendMessage" \
+  ok=$(curl -s --max-time 15 -X POST "$API/sendMessage" \
     --data-urlencode "chat_id=$1" \
     --data-urlencode "text=$2" \
     --data-urlencode "parse_mode=HTML" \
     --data-urlencode "disable_web_page_preview=true" | jq -r '.ok // false')
   [ "$ok" = "true" ] || tg "$1" "$2"
 }
-tg_typing(){ curl -s -X POST "$API/sendChatAction" --data-urlencode "chat_id=$1" --data-urlencode "action=typing" >/dev/null; }
+tg_typing(){ curl -s --max-time 10 -X POST "$API/sendChatAction" --data-urlencode "chat_id=$1" --data-urlencode "action=typing" >/dev/null; }
 normalize_html(){ # converte Markdown→HTML (ponto único de normalização para Telegram)
   python3 "$DIR/normalize.py" html "$1"
 }
@@ -54,18 +64,19 @@ tg_send_long(){ # normaliza MD→HTML e envia; divide em blocos de ~3900 quebran
   done <<< "$txt"
   [ -n "$chunk" ] && tg_html "$cid" "$chunk"
 }
-tg_voice(){ curl -s -F "chat_id=$1" -F "voice=@$2" "$API/sendVoice" >/dev/null; }
+tg_voice(){ curl -s --max-time 60 -F "chat_id=$1" -F "voice=@$2" "$API/sendVoice" >/dev/null; }
 transcribe_voice(){ # <file_id> -> texto (stdout)
   local fid="$1" fp tmp
-  fp=$(curl -s "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
+  fp=$(curl -s --max-time 15 --retry 2 "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
   [ -z "$fp" ] && return
-  tmp="/tmp/voice_$$_${RANDOM}.oga"
-  curl -s -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}"
+  tmp=$(mktemp --suffix=.oga)
+  curl -fsS --max-time 60 --retry 2 -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}" || { rm -f "$tmp"; return; }
   "$DIR/transcribe.sh" "$tmp"
   rm -f "$tmp"
 }
 speak_to(){ # <chat> <texto> — gera voz pt-BR e envia como mensagem de voz
-  local cid="$1" txt ogg="/tmp/say_$$_${RANDOM}.ogg"
+  local cid="$1" txt ogg
+  ogg=$(mktemp --suffix=.ogg)
   txt=$(printf '%s' "$2" | head -c 900)
   "$DIR/tts.sh" "$txt" "$ogg" && tg_voice "$cid" "$ogg"
   rm -f "$ogg"
@@ -80,13 +91,16 @@ printer_online(){ local h; h=$(printer_host); [ -n "$h" ] && ping -c1 -W2 "$h" >
 print_telegram_file(){ # <chat> <file_id> <nome>
   local cid="$1" fid="$2" name="$3" cap="${4:-}"
   local fp tmp mime safe pages popt pmsg
-  fp=$(curl -s "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
+  fp=$(curl -s --max-time 15 --retry 2 "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
   if [ -z "$fp" ]; then tg "$cid" "❌ Não consegui baixar o arquivo do Telegram."; return; fi
-  # páginas a partir da legenda (ex.: "1", "página 1", "2-4", "1,3"); vazio = todas
-  pages=$(echo "$cap" | grep -oiE '[0-9]+([,-][0-9]+)*' | head -1)
+  # páginas: exige contexto ("p. 1-3", "página 2", "pags 1,3") ou faixa/lista ("2-4", "1,3");
+  # número solto NÃO conta ("imprimir contrato 2024" não vira -P 2024)
+  pages=$(echo "$cap" | grep -oiE '(p[áa]g(ina)?s?\.?|p\.) *[0-9]+([,-][0-9]+)*' | grep -oE '[0-9]+([,-][0-9]+)*' | head -1)
+  [ -z "$pages" ] && pages=$(echo "$cap" | grep -oE '\b[0-9]+[,-][0-9]+\b' | head -1)
   safe=$(echo "$name" | tr -c 'A-Za-z0-9._-' '_')
-  tmp="$PQ/$(date +%s)~~${pages:-all}~~${safe}"
-  curl -s -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}"
+  tmp="$PQ/$(date +%s)_$$_${RANDOM}~~${pages:-all}~~${safe}"
+  curl -fsS --max-time 120 --retry 2 -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}" \
+    || { rm -f "$tmp"; tg "$cid" "❌ Falha ao baixar \"$name\" (rede). Tente reenviar."; return; }
   mime=$(file -b --mime-type "$tmp" 2>/dev/null)
   case "$mime" in
     application/pdf|image/*|text/*) : ;;
@@ -97,8 +111,12 @@ print_telegram_file(){ # <chat> <file_id> <nome>
   popt=""; pmsg=""
   if [ -n "$pages" ]; then popt="-P $pages"; pmsg=" (pág. $pages)"; fi
   if printer_online; then
-    lp -d "$PRINTER" $popt -t "$name" "$tmp" >/dev/null 2>&1 && tg "$cid" "🖨️ Imprimindo \"$name\"$pmsg agora na $PRINTER."
-    rm -f "$tmp"
+    if lp -d "$PRINTER" $popt -t "$name" "$tmp" >/dev/null 2>&1; then
+      tg "$cid" "🖨️ Imprimindo \"$name\"$pmsg agora na $PRINTER."
+      rm -f "$tmp"
+    else  # lp falhou: NÃO apaga — fica na fila pro retry automático
+      tg "$cid" "⚠️ A impressora respondeu mas o envio de \"$name\" falhou. Deixei na fila; tento de novo em ~1 min."
+    fi
   else
     tg "$cid" "📥 Recebi \"$name\"$pmsg, mas a impressora ($PRINTER) parece DESLIGADA. Liga ela que eu imprimo sozinho quando voltar (verifico a cada ~1 min). Fila: $(ls -1 "$PQ" | wc -l)."
   fi
@@ -146,15 +164,20 @@ kid_print(){ # <chat> <file_id> <nome> <caption> <KidName> — impressão com li
   if ! kid_quota_take "$cntf"; then
     tg "$cid" "📵 Você já imprimiu bastante hoje ($KID_DAILY_MAX). Amanhã libera de novo! Se precisar mesmo, fala com o papai. 😊"; return
   fi
-  fp=$(curl -s "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
+  fp=$(curl -s --max-time 15 --retry 2 "$API/getFile?file_id=$fid" | jq -r '.result.file_path // empty')
   [ -z "$fp" ] && { kid_quota_refund "$cntf"; tg "$cid" "❌ Não consegui baixar o arquivo."; return; }
-  tmp="$PQ/$(date +%s)~~1-${KID_MAX_PAGES}~~$(echo "$name" | tr -c 'A-Za-z0-9._-' '_')"
-  curl -s -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}"
+  tmp="$PQ/$(date +%s)_$$_${RANDOM}~~1-${KID_MAX_PAGES}~~$(echo "$name" | tr -c 'A-Za-z0-9._-' '_')"
+  curl -fsS --max-time 120 --retry 2 -o "$tmp" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fp}" \
+    || { rm -f "$tmp"; kid_quota_refund "$cntf"; tg "$cid" "❌ Deu erro pra baixar o arquivo, tenta de novo? 😊"; return; }
   mime=$(file -b --mime-type "$tmp" 2>/dev/null)
   case "$mime" in application/pdf|image/*|text/*) : ;; *) rm -f "$tmp"; kid_quota_refund "$cntf"; tg "$cid" "⚠️ Só consigo imprimir PDF, foto ou texto. 😊"; return;; esac
   if printer_online; then
-    lp -d "$PRINTER" -P "1-$KID_MAX_PAGES" -t "$name" "$tmp" >/dev/null 2>&1 && tg "$cid" "🖨️ Imprimindo \"$name\" (até $KID_MAX_PAGES págs)! Vai sair na impressora. 😊"
-    rm -f "$tmp"
+    if lp -d "$PRINTER" -P "1-$KID_MAX_PAGES" -t "$name" "$tmp" >/dev/null 2>&1; then
+      tg "$cid" "🖨️ Imprimindo \"$name\" (até $KID_MAX_PAGES págs)! Vai sair na impressora. 😊"
+      rm -f "$tmp"
+    else  # lp falhou: fica na fila pro retry automático
+      tg "$cid" "⚠️ A impressora deu erro agora, mas guardei o arquivo — imprimo assim que ela voltar. 😊"
+    fi
   else
     tg "$cid" "📥 Recebi \"$name\"! Mas a impressora tá desligada agora — quando ligarem eu imprimo automaticamente. 😉"
   fi
@@ -177,10 +200,13 @@ check_new_devices(){ # alerta o admin quando um MAC NOVO aparece na rede (a cada
   local ARP_TMP; ARP_TMP=$(mktemp)
   arp-scan --interface="$NDEV_IFACE" --localnet --quiet --plain 2>/dev/null > "$ARP_TMP" || true
 
+  # Catálogo de dispositivos: baixa UMA vez por rodada (era 1 request por MAC novo)
+  local DEVJSON; DEVJSON=$(curl -s --max-time 5 "http://127.0.0.1:8080/api/devices" 2>/dev/null || true)
+
   # Verificar se algum dono excluído está em casa (MAC conhecido online)
   local EXCLUDE_HOME=0
   local excl_macs_list online_macs_list
-  excl_macs_list=$(curl -s "http://127.0.0.1:8080/api/devices" 2>/dev/null \
+  excl_macs_list=$(printf '%s' "$DEVJSON" \
     | python3 -c "
 import sys,json
 owners=['Gabi','Ana']
@@ -206,7 +232,7 @@ except: pass
     # Suprime alerta se o IP já pertence a um dispositivo trusted no catálogo
     # (evita falsos positivos por rotação de MAC ou troca de dock/adaptador)
     if [ -n "$ip" ]; then
-      trusted_name=$(curl -s "http://127.0.0.1:8080/api/devices" 2>/dev/null \
+      trusted_name=$(printf '%s' "$DEVJSON" \
         | python3 -c "
 import sys,json
 try:
@@ -250,7 +276,7 @@ deliver_reminder(){ # <target> <mensagem>
       while read -r cid name; do [ -n "${cid:-}" ] && tg "$cid" "⏰ Lembrete: $msg"; done < "$DIR/kids/registry.txt"
       [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg "$TELEGRAM_CHAT_ID" "✅ Lembrete enviado p/ todos: $msg";;
     *)
-      cid=$(awk -v n="$tgt" 'tolower($2)==tolower(n){print $1;exit}' "$DIR/kids/registry.txt" 2>/dev/null)
+      cid=$(kid_chat_id "$tgt")
       if [ -n "$cid" ]; then
         tg "$cid" "⏰ Lembrete: $msg"
         [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg "$TELEGRAM_CHAT_ID" "✅ Lembrete entregue p/ $tgt: $msg"
@@ -284,7 +310,11 @@ process_reminders(){
     fi
     if [ "$fire" = "1" ]; then
       deliver_reminder "$target" "$message"
-      jq --arg id "$id" 'map(if .id==$id then .fired=true else . end)' "$REMIND_F" > "$REMIND_F.tmp" && mv "$REMIND_F.tmp" "$REMIND_F"
+      # flock compartilhado com reminder_add.sh: sem ele, lembrete criado durante
+      # esta reescrita era perdido (lost update)
+      ( flock 9
+        jq --arg id "$id" 'map(if .id==$id then .fired=true else . end)' "$REMIND_F" > "$REMIND_F.tmp" && mv "$REMIND_F.tmp" "$REMIND_F"
+      ) 9>>"$REMIND_F.lock"
     fi
   done < <(jq -r '.[]|select(.fired==false)|[.id,.type,.target,(.at|tostring),.message]|@tsv' "$REMIND_F")
 }
@@ -306,8 +336,8 @@ process_screen_nudges(){ # nudge de bem-estar p/ as filhas (uso contínuo), na p
     [ "${pcount:-0}" -ge 2 ] && continue          # máx 2/dia
     l90=$("$DIR/screen_usage.sh" "$p" 2>/dev/null | awk -F= '/^LAST90/{print $2}')
     if [ "${l90:-0}" -ge 45 ]; then               # ~uso contínuo na última 1h30
-      if [ "$p" = "Rodrigo" ]; then cid="$TELEGRAM_CHAT_ID"
-      else cid=$(awk -v n="$p" 'tolower($2)==tolower(n){print $1;exit}' "$DIR/kids/registry.txt" 2>/dev/null); fi
+      if [ "$p" = "Rodrigo" ]; then cid="${TELEGRAM_CHAT_ID:-}"
+      else cid=$(kid_chat_id "$p"); fi
       msg=$("$DIR/kid_nudge.sh" "$p" pausa 2>/dev/null)
       [ -n "$cid" ] && [ -n "$msg" ] && tg "$cid" "$msg"
       printf '%s\n%s\n%s\n' "$now" "$today" "$((pcount + 1))" > "$cf"
@@ -326,8 +356,8 @@ process_habits(){ # coach de hábitos: ritmo da semana + revisão de domingo + a
   for pdir in "$DIR/habits"/*; do
     [ -d "$pdir" ] || continue
     P=$(basename "$pdir")
-    if [ "$P" = "Rodrigo" ]; then cid="$TELEGRAM_CHAT_ID"
-    else cid=$(awk -v n="$P" 'tolower($2)==tolower(n){print $1;exit}' "$DIR/kids/registry.txt" 2>/dev/null); fi
+    if [ "$P" = "Rodrigo" ]; then cid="${TELEGRAM_CHAT_ID:-}"
+    else cid=$(kid_chat_id "$P"); fi
     [ -z "$cid" ] && continue
     for f in "$pdir"/*.json; do
       [ -f "$f" ] || continue
@@ -362,11 +392,12 @@ process_habits(){ # coach de hábitos: ritmo da semana + revisão de domingo + a
 # Ignora mensagens antigas: começa do último update_id+1
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 if [ "$OFFSET" = "0" ]; then
-  last=$(curl -s "$API/getUpdates?offset=-1" | jq -r '.result[-1].update_id // 0')
+  last=$(curl -s --max-time 15 --retry 2 "$API/getUpdates?offset=-1" | jq -r '.result[-1].update_id // 0')
   OFFSET=$((last + 1)); echo "$OFFSET" > "$OFFSET_FILE"
 fi
 [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg "$TELEGRAM_CHAT_ID" "🟢 PIrrai online (modelo: $(get_model)). Pergunte, peça ações no Pi, ou envie PDF/foto p/ imprimir. /opus = mais raciocínio · /sonnet = padrão · 'opus: ...' p/ uma pergunta só · /reset limpa a conversa."
 
+ERRSLEEP=0
 while true; do
   process_print_queue
   check_new_devices
@@ -376,6 +407,14 @@ while true; do
   echo "$(date +%s)" > "$STATE/heartbeat"   # watchdog: prova de vida do loop
   RESP=$(curl -s --max-time 60 "$API/getUpdates?offset=${OFFSET}&timeout=50")
   [ -z "$RESP" ] && sleep 2 && continue
+  # ok:false (ex.: HTTP 409 de instância duplicada) virava busy-loop sem pausa;
+  # agora backoff exponencial 5s→60s até a API voltar
+  if [ "$(echo "$RESP" | jq -r '.ok // false' 2>/dev/null)" != "true" ]; then
+    ERRSLEEP=$(( ERRSLEEP > 0 ? (ERRSLEEP*2 > 60 ? 60 : ERRSLEEP*2) : 5 ))
+    echo "[agent] getUpdates falhou ($(echo "$RESP" | jq -r '.description // "resposta inválida"' 2>/dev/null)) — aguardando ${ERRSLEEP}s"
+    sleep "$ERRSLEEP"; continue
+  fi
+  ERRSLEEP=0
   while IFS= read -r upd; do
     uid=$(echo "$upd" | jq -r '.update_id')
     OFFSET=$((uid + 1)); echo "$OFFSET" > "$OFFSET_FILE"
@@ -451,10 +490,11 @@ while true; do
         # sem pedido de impressão → baixa e analisa com Claude
         UPFID="${photo_id:-$doc_id}"
         UPNAME="${doc_name:-foto.jpg}"; [ -n "$photo_id" ] && UPNAME="foto.jpg"
-        UPFP=$(curl -s "$API/getFile?file_id=$UPFID" | jq -r '.result.file_path // empty')
+        UPFP=$(curl -s --max-time 15 --retry 2 "$API/getFile?file_id=$UPFID" | jq -r '.result.file_path // empty')
         if [ -z "$UPFP" ]; then tg "$chat" "❌ Não consegui baixar o arquivo."; continue; fi
         UPTMP="$WORKDIR/upload_$(date +%s)_${UPNAME//[^A-Za-z0-9._-]/_}"
-        curl -s -o "$UPTMP" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${UPFP}"
+        curl -fsS --max-time 120 --retry 2 -o "$UPTMP" "https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${UPFP}" \
+          || { rm -f "$UPTMP"; tg "$chat" "❌ Falha ao baixar o arquivo (rede). Tente reenviar."; continue; }
         text="Arquivo recebido: $UPNAME (caminho: $UPTMP)"
         [ -n "$caption" ] && text="$text — legenda/pergunta do usuário: $caption"
         text="$text. Leia e analise o arquivo usando a ferramenta Read. Para imprimir, o usuário deve dizer explicitamente 'imprimir'."

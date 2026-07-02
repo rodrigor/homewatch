@@ -5,7 +5,9 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 DB="${FINANCE_DB:-$DIR/finance.db}"
-sq(){ sqlite3 "$DB" "$@"; }
+# .timeout: o web app Flask usa o mesmo banco; sem isso, escrita concorrente
+# falha na hora com "database is locked" em vez de esperar
+sq(){ sqlite3 -cmd '.timeout 5000' "$DB" "$@"; }
 
 # reais -> centavos (aceita "45", "45,90", "45.90", "1.234,56", "R$ 45,90", "-12,5")
 to_cents(){
@@ -94,6 +96,7 @@ migrate_cols(){  # adiciona colunas novas em bancos já existentes
   sq "PRAGMA table_info(transactions);" | grep -q '|currency|'        || sq "ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT 'BRL';"
   sq "PRAGMA table_info(accounts);"     | grep -q '|opening_balance|' || sq "ALTER TABLE accounts ADD COLUMN opening_balance INTEGER DEFAULT 0;"
   sq "PRAGMA table_info(accounts);"     | grep -q '|currency|'        || sq "ALTER TABLE accounts ADD COLUMN currency TEXT DEFAULT 'BRL';"
+  sq "PRAGMA table_info(transactions);" | grep -q '|recurrence|'      || sq "ALTER TABLE transactions ADD COLUMN recurrence TEXT;"
   sq "CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY, value TEXT);"
   sq "CREATE TABLE IF NOT EXISTS account_valuations(
     id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, date TEXT NOT NULL,
@@ -111,7 +114,7 @@ seed_categories(){
     [ -z "$name" ] && continue
     local jkw; jkw=$(printf '%s' "$kws" | jq -Rc 'split(",")|map(select(length>0))')
     sq "INSERT INTO categories(name,parent,icon,color,grupo,rule_keywords)
-        VALUES('$name','$parent','$icon','$color','$(esc "$grupo")','$(printf '%s' "$jkw" | sed "s/'/''/g")')
+        VALUES('$(esc "$name")','$(esc "$parent")','$(esc "$icon")','$(esc "$color")','$(esc "$grupo")','$(printf '%s' "$jkw" | sed "s/'/''/g")')
         ON CONFLICT(name) DO UPDATE SET grupo=COALESCE(categories.grupo, excluded.grupo);"
   done <<'CATS'
 Mercado||🛒|#2e7d32|Casa|mercado,supermercado,atacad,carrefour,pao de acucar,assai,big,extra,hortifruti
@@ -131,6 +134,11 @@ CATS
 
 # escapa string p/ SQL
 esc(){ printf '%s' "$1" | sed "s/'/''/g"; }
+
+# resolve conta por id ou nome (parcial); imprime o id, vazio se não achar
+resolve_account(){
+  sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$1")' OR lower(name) LIKE lower('%$(esc "$1")%') LIMIT 1;"
+}
 
 # autocat_match "texto" -> categoria (regras + palavras-chave) via motor Python; vazio se nenhuma
 autocat_match(){ python3 "$DIR/finance_rules.py" classify "" "${1:-}" "" 2>/dev/null; }
@@ -191,7 +199,7 @@ case "$cmd" in
 
   excepcional)  # excepcional <id> <on|off>  — marca lançamento como despesa fora do normal
     id="${1:?uso: excepcional <id> on|off}"; req_int "$id"; st="${2:-on}"; v=1; [ "$st" = "off" ] && v=0
-    sq "UPDATE transactions SET excepcional=$v WHERE id=$id;"
+    sq "UPDATE transactions SET excepcional=$v WHERE id=$id;" || { echo "ERRO: não gravado"; exit 1; }
     echo "OK — #$id excepcional=$v"
     ;;
 
@@ -214,12 +222,12 @@ case "$cmd" in
       where="category='$(esc "$cat_filter")'"
       [ -n "$fav_filter" ] && where+=" AND favorecido LIKE '%$(esc "$fav_filter")%'"
       cnt=$(sq "SELECT COUNT(*) FROM transactions WHERE $where;")
-      sq "UPDATE transactions SET recurrence=$val WHERE $where;"
+      sq "UPDATE transactions SET recurrence=$val WHERE $where;" || { echo "ERRO: não gravado"; exit 1; }
       echo "OK — $cnt lançamentos ($cat_filter${fav_filter:+ / $fav_filter}) → recurrence=${freq}"
     else
       id="${1:?uso: recurrence <id> <mensal|anual|trimestral|semanal|unico|->}"; req_int "$id"; freq="${2:?frequência}"
       val="NULL"; [ "$freq" != "-" ] && val="'$(esc "$freq")'"
-      sq "UPDATE transactions SET recurrence=$val WHERE id=$id;"
+      sq "UPDATE transactions SET recurrence=$val WHERE id=$id;" || { echo "ERRO: não gravado"; exit 1; }
       echo "OK — #$id → recurrence=${freq}"
     fi
     ;;
@@ -227,7 +235,7 @@ case "$cmd" in
   setcat)  # setcat <id> "<categoria>"  — define categoria de UM lançamento
     id="${1:?uso: setcat <id> categoria}"; req_int "$id"; cat="${2:?categoria}"
     sq "INSERT OR IGNORE INTO categories(name,icon) VALUES('$(esc "$cat")','🏷️');
-        UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;"
+        UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;" || { echo "ERRO: não gravado"; exit 1; }
     echo "OK — #$id → $cat"
     ;;
 
@@ -305,6 +313,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     id=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status)
         VALUES('$(esc "$dt")',$cents,'$(esc "$desc")',$([ -n "$cat" ] && echo "'$(esc "$cat")'" || echo NULL),$accsql,'${SOURCE:-manual}','confirmado');
         SELECT last_insert_rowid();")
+    [ -z "$id" ] && { echo "ERRO: lançamento NÃO gravado (banco ocupado?)"; exit 1; }
     echo "OK #$id — $(cents_fmt "$cents") · ${desc:-(sem descrição)}${cat:+ · $cat} · $dt"
     ;;
 
@@ -319,7 +328,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
 
   categorize)  # categorize <id> <categoria>
     id="${1:?uso: categorize <id> <categoria>}"; req_int "$id"; cat="${2:?categoria}"
-    sq "UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;"
+    sq "UPDATE transactions SET category='$(esc "$cat")' WHERE id=$id;" || { echo "ERRO: não gravado"; exit 1; }
     echo "OK — #$id → $cat"
     ;;
 
@@ -363,9 +372,8 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     # Cria par de lançamentos vinculados. Para moedas diferentes, informe valor_para.
     de_raw="${1:?uso: transfer-add <de> <para> <valor_de> [valor_para] [data] [desc]}"; para_raw="${2:?para}"; val_de="${3:?valor}"
     val_para="${4:-}"; dt="${5:-$(date +%F)}"; desc="${6:-Transferência}"
-    # resolve contas por id ou nome (parcial)
-    de_id=$(sq   "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$de_raw")'   OR lower(name) LIKE lower('%$(esc "$de_raw")%')   LIMIT 1;")
-    para_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$para_raw")' OR lower(name) LIKE lower('%$(esc "$para_raw")%') LIMIT 1;")
+    de_id=$(resolve_account "$de_raw")
+    para_id=$(resolve_account "$para_raw")
     [ -z "$de_id"   ] && { echo "Conta não encontrada: $de_raw";   exit 1; }
     [ -z "$para_id" ] && { echo "Conta não encontrada: $para_raw"; exit 1; }
     de_cur=$(sq   "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$de_id;")
@@ -378,6 +386,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     else
       [ -z "$val_para" ] && { echo "Contas em moedas diferentes ($de_cur→$para_cur). Informe também o valor na conta destino."; exit 1; }
       cents_para=$(to_cents "$val_para"); [ "$cents_para" = "ERR" ] && { echo "valor_para inválido"; exit 1; }; cents_para=${cents_para#-}
+      [ "$cents_para" -eq 0 ] && { echo "valor_para não pode ser 0"; exit 1; }
       # fx_rate = unidades_de / unidades_para (e.g. BRL/USD)
       fx_rate=$(awk "BEGIN{printf \"%.6f\", $cents_de/$cents_para}")
       orig_de=$cents_de; orig_para=$cents_para
@@ -391,10 +400,12 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     id_d=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate)
       VALUES('$(esc "$dt")',-$cents_de,'$(esc "$desc")','Transferência própria',$de_id,'manual','confirmado','transfer','$de_cur',-$orig_de,$fx_de);
       SELECT last_insert_rowid();")
+    [ -z "$id_d" ] && { echo "ERRO: débito NÃO gravado (banco ocupado?)"; exit 1; }
     # insere crédito
     id_c=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate,transfer_pair_id)
       VALUES('$(esc "$dt")',$cents_para,'$(esc "$desc")','Transferência própria',$para_id,'manual','confirmado','transfer','$para_cur',$orig_para,$fx_para,$id_d);
       SELECT last_insert_rowid();")
+    [ -z "$id_c" ] && { echo "ERRO: crédito NÃO gravado; removendo débito órfão #$id_d"; sq "DELETE FROM transactions WHERE id=$id_d;"; exit 1; }
     # vincula débito ao crédito
     sq "UPDATE transactions SET transfer_pair_id=$id_c WHERE id=$id_d;"
     echo "OK — Transferência: $(cents_fmt $cents_de) $de_cur  $de_name → $para_name  (#$id_d ↔ #$id_c)"
@@ -404,7 +415,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     # Valor positivo = rendimento; negativo = perda/depreciação
     conta_raw="${1:?uso: rendimento <conta> <valor> [data] [desc]}"; val="${2:?valor}"
     dt="${3:-$(date +%F)}"; desc="${4:-Rendimento}"
-    conta_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(name) LIKE lower('%$(esc "$conta_raw")%') LIMIT 1;")
+    conta_id=$(resolve_account "$conta_raw")
     [ -z "$conta_id" ] && { echo "Conta não encontrada: $conta_raw"; exit 1; }
     conta_cur=$(sq "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$conta_id;")
     conta_name=$(sq "SELECT name FROM accounts WHERE id=$conta_id;")
@@ -412,6 +423,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     id=$(sq "INSERT INTO transactions(date,amount,description,category,account_id,source,status,tx_type,currency,amount_original,fx_rate)
       VALUES('$(esc "$dt")',$cents,'$(esc "$desc")','Rendimento',$conta_id,'manual','confirmado','rendimento','$conta_cur',$cents,1);
       SELECT last_insert_rowid();")
+    [ -z "$id" ] && { echo "ERRO: rendimento NÃO gravado (banco ocupado?)"; exit 1; }
     tipo=$( [ "${cents:0:1}" = "-" ] && echo "perda" || echo "rendimento" )
     echo "OK #$id — $tipo: $(cents_fmt ${cents#-}) $conta_cur em $conta_name · $dt"
     ;;
@@ -420,7 +432,7 @@ Me diga a categoria de cada um (ex.: <i>#$first é mercado</i>, ou <i>todos do H
     # Snapshot do valor de mercado atual da conta (para acompanhamento)
     conta_raw="${1:?uso: valuation <conta> <valor> [data] [notas]}"; val="${2:?valor}"
     dt="${3:-$(date +%F)}"; notas="${4:-}"
-    conta_id=$(sq "SELECT id FROM accounts WHERE CAST(id AS TEXT)='$(esc "$conta_raw")' OR lower(name) LIKE lower('%$(esc "$conta_raw")%') LIMIT 1;")
+    conta_id=$(resolve_account "$conta_raw")
     [ -z "$conta_id" ] && { echo "Conta não encontrada: $conta_raw"; exit 1; }
     conta_cur=$(sq "SELECT COALESCE(currency,'BRL') FROM accounts WHERE id=$conta_id;")
     cents=$(to_cents "$val"); [ "$cents" = "ERR" ] && { echo "valor inválido"; exit 1; }; cents=${cents#-}

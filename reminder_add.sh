@@ -15,8 +15,12 @@ if [ "$type" = "time" ]; then
   [ -z "$at" ] && { echo "ERRO: não entendi a data/hora '$when'"; exit 1; }
 fi
 id="r$(date +%s)$RANDOM"
-jq --arg id "$id" --arg t "$target" --arg ty "$type" --argjson at "$at" --arg m "$msg" \
-  '. += [{"id":$id,"target":$t,"type":$ty,"at":$at,"message":$m,"fired":false}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+# flock compartilhado com o telegram_agent (process_reminders reescreve o mesmo
+# arquivo ao marcar fired) — sem ele, um dos dois perdia a escrita do outro
+( flock 9
+  jq --arg id "$id" --arg t "$target" --arg ty "$type" --argjson at "$at" --arg m "$msg" \
+    '. += [{"id":$id,"target":$t,"type":$ty,"at":$at,"message":$m,"fired":false}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+) 9>>"$F.lock"
 if [ "$type" = "time" ]; then
   echo "✓ lembrete $id: '$msg' para $target em $(date -d @"$at" '+%d/%m %H:%M')"
 else

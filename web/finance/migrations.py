@@ -61,6 +61,12 @@ def m_tx_transfer_group(con):
         con.execute("ALTER TABLE transactions ADD COLUMN transfer_group TEXT")
 
 
+def m_tx_recurrence(con):
+    cols = _cols(con, "transactions")
+    if cols and "recurrence" not in cols:  # usada pelo finance.sh recurrence; faltava criar
+        con.execute("ALTER TABLE transactions ADD COLUMN recurrence TEXT")
+
+
 MIGRATIONS = [
     ("accounts-titular", m_accounts_titular),
     ("tx-split-group", m_tx_split_group),
@@ -69,6 +75,7 @@ MIGRATIONS = [
     ("accounts-orcamento", m_accounts_orcamento),
     ("tx-iof", m_tx_iof),
     ("tx-transfer-group", m_tx_transfer_group),
+    ("tx-recurrence", m_tx_recurrence),
 ]
 
 

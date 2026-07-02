@@ -30,7 +30,7 @@
 - [x] `telegram_agent.sh` e `finance.sh` revisados → **26 achados em `REVISAO-SCRIPTS.md`**
 
 ## ⏭️ Próxima fronteira (novo backlog)
-- [ ] **Corrigir os achados 🔴 do `REVISAO-SCRIPTS.md`** — em especial o bug de 100× no `to_cents` do finance.sh e a injeção SQL via CLI
+- [x] **Corrigir os achados do `REVISAO-SCRIPTS.md`** — 🔴 + 🟡 + ⚪ todos corrigidos em 2026-07-02 (restam 2 riscos aceitos documentados)
 - [ ] Trocar o dev server do Flask por um WSGI de produção (gunicorn/waitress) nos 3 apps web
 - [ ] Rodar os testes num hook de pre-commit ou timer (hoje é manual)
 - [ ] Considerar extrair o CSS inline restante das páginas para o `app.css` (ficou só o page-specific)
