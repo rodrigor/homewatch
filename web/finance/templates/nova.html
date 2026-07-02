@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}<div class="card" style=max-width:560px>
+<h3 style=margin-top:0>Novo lançamento</h3>
+<form method=post class=row>
+  <div><label>Valor (R$)</label><input name=valor placeholder="45,90" required style=width:100%></div>
+  <div><label>Tipo</label><select name=tipo style=width:100%><option value=despesa>Despesa</option><option value=receita>Receita</option></select></div>
+  <div class=full><label>Descrição</label><input name=descricao placeholder="iFood almoço" style=width:100%></div>
+  <div><label>Categoria</label><select name=categoria style=width:100%><option value="">(automática)</option>
+    {% for ct in cats %}<option>{{ct['name']}}</option>{% endfor %}</select></div>
+  <div><label>Conta</label><select name=conta style=width:100%><option value="">—</option>
+    {% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></div>
+  <div><label>Data</label><input type=date name=data value="{{hoje}}" style=width:100%></div>
+  <div class=full><button>Lançar</button> <a href="{{url_for('tx.transacoes')}}" class=muted>cancelar</a></div>
+</form></div>
+{% endblock %}

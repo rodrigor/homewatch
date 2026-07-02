@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block body %}<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+<h2 style="margin:0;flex:1">Resumo</h2>
+<form><input type=month name=mes value="{{mes}}" onchange=this.form.submit()></form></div>
+<div class=grid>
+<div class="card kpi"><div class=l>Despesas (recorrentes)</div><div class="v neg">{{desp|brl}}</div></div>
+{% if exc %}<div class="card kpi"><div class=l>Excepcionais</div><div class="v" style=color:#d29922>{{exc|brl}}</div><div class=tag>fora do normal</div></div>{% endif %}
+<div class="card kpi"><div class=l>Receitas</div><div class="v pos">{{rec|brl}}</div></div>
+<div class="card kpi"><div class=l>Saldo</div><div class="v">{{(rec-desp)|brl}}</div></div>
+<div class="card kpi"><div class=l>Transações</div><div class=v>{{n}}</div><div class=tag>{{pend}} pendente(s)</div></div></div>
+{% if meses %}<div class=card><h3 style=margin-top:0>Despesas e receitas mês a mês</h3>
+<div class=mchart>
+  {% for m in meses %}<div class="mcol{{' on' if m.atual}}">
+    <div class=mbars>
+      <div class=mbar title="Despesas: {{(m.rec+m.exc)|brl}}">
+        {% if m.exc_px %}<div style="height:{{m.exc_px}}px;background:#d29922" title="excepcional: {{m.exc|brl}}"></div>{% endif %}
+        <div style="height:{{m.rec_px}}px;background:var(--red)" title="recorrente: {{m.rec|brl}}"></div>
+      </div>
+      <div class=mbar title="Receitas: {{m.receita|brl}}">
+        <div style="height:{{m.receita_px}}px;background:var(--grn)"></div>
+      </div>
+    </div>
+    <div class=mlbl>{{m.label}}</div>
+  </div>{% endfor %}
+</div>
+<div class=tag style=margin-top:8px><span style="color:var(--red)">■</span> despesa &nbsp; <span style="color:#d29922">■</span> excepcional &nbsp; <span style="color:var(--grn)">■</span> receita</div></div>{% endif %}
+<div class=card>
+  <div style="display:flex;align-items:center;margin-bottom:4px"><h3 style="margin:0;flex:1">Teto dos essenciais e resultado</h3>
+    <a class=tag href="{{url_for('contas.contas')}}">contas no orçamento →</a></div>
+  <p class=tag style="margin:0 0 14px">Só contas marcadas “entra no orçamento” (exclui Conta Global, investimentos). Regra da casa: N1+N2 ≤ salários.</p>
+  <div style="font-size:13px;font-weight:600;margin:2px 0 8px">Teto dos essenciais — N1+N2 vs salários</div>
+  <div class=orcleg><span><i style="background:#534AB7"></i>N1 comprometido</span><span><i style="background:#7F77DD"></i>N2 necessário</span><span><i style="width:16px;height:0;border-top:2px dashed #2ea043;border-radius:0;background:none"></i>salários (teto)</span></div>
+  <div style="position:relative;width:100%;height:230px;margin-bottom:20px"><canvas id="orc_teto" role="img" aria-label="Barras empilhadas N1+N2 por mês com linha de salários (teto)."></canvas></div>
+  <div style="font-size:13px;font-weight:600;margin:2px 0 8px">Resultado — despesas por nível vs receitas</div>
+  <div class=orcleg><span><i style="background:#534AB7"></i>N1</span><span><i style="background:#7F77DD"></i>N2</span><span><i style="background:#AFA9EC"></i>N3</span><span><i style="background:#B4B2A9"></i>sem cat.</span><span><i style="width:16px;height:0;border-top:2px dashed #3fb950;border-radius:0;background:none"></i>receitas</span></div>
+  <div style="position:relative;width:100%;height:240px"><canvas id="orc_res" role="img" aria-label="Barras empilhadas de despesas por nível por mês com linha de receitas."></canvas></div>
+  <style>.orcleg{display:flex;flex-wrap:wrap;gap:7px 16px;font-size:12px;color:var(--mut);margin-bottom:6px;align-items:center}
+  .orcleg i{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:5px}</style>
+</div>
+<script>window.ORCSERIE={{orcserie_json|safe}};</script>
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script>
+(function(){
+  var S=window.ORCSERIE; if(!S||!S.length) return;
+  var MN=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  var L=S.map(function(d){return MN[parseInt(d.ym.slice(5,7),10)-1]+'/'+d.ym.slice(2,4);});
+  var col=function(k){return S.map(function(d){return Math.round((d[k]||0)/100);});};
+  var fmt=function(v){return 'R$ '+Math.round(v).toLocaleString('pt-BR');};
+  function bar(l,k,c){return {type:'bar',label:l,data:col(k),backgroundColor:c,stack:'s',borderRadius:2};}
+  function ln(l,k,c){return {type:'line',label:l,data:col(k),borderColor:c,borderDash:[6,4],borderWidth:2,pointStyle:'rectRot',pointRadius:4,pointBackgroundColor:c};}
+  function mk(id,ds){new Chart(document.getElementById(id),{data:{labels:L,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return x.dataset.label+': '+fmt(x.raw);}}}},
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#8b98a9',font:{size:12},autoSkip:false}},
+        y:{stacked:true,grid:{color:'rgba(150,150,150,.12)'},ticks:{color:'#8b98a9',font:{size:12},callback:function(v){return 'R$ '+(v/1000)+'k';}}}}});}
+  function run(){
+    mk('orc_teto',[bar('N1','n1','#534AB7'),bar('N2','n2','#7F77DD'),ln('Salários','sal','#2ea043')]);
+    mk('orc_res',[bar('N1','n1','#534AB7'),bar('N2','n2','#7F77DD'),bar('N3','n3','#AFA9EC'),bar('sem cat.','n0','#B4B2A9'),ln('Receitas','rec','#3fb950')]);
+  }
+  if(window.Chart)run(); else {var t=setInterval(function(){if(window.Chart){clearInterval(t);run();}},60);}
+})();
+</script>
+<div class=card><div style="display:flex;align-items:center;margin-bottom:10px"><h3 style="margin:0;flex:1">Estrutura de gasto</h3>
+  <a class=tag href="{{url_for('regras.grupos')}}">editar níveis →</a></div>
+{% set total_niv = n1+n2+n3+n0 or 1 %}
+{% set cores = {1:'#2f81f7', 2:'#3fb950', 3:'#ef6c00', 0:'#6e7681'} %}
+{% set labels = {1:'Comprometido', 2:'Necessário variável', 3:'Discricionário', 0:'Sem classificação'} %}
+{% for niv, val in [(1,n1),(2,n2),(3,n3)] if val > 0 %}
+<div class=gbar>
+  <div class=gl><span class=catlink data-tipo=nivel data-val="{{niv}}" data-lbl="N{{niv}} {{labels[niv]}}" onclick="openTx(this)" title="ver transações">N{{niv}} {{labels[niv]}}</span></div>
+  <div class=gt><div class=gf style="width:{{(val/total_niv*100)|round(1)}}%;background:{{cores[niv]}}"></div></div>
+  <div class=gv>{{val|brl}} <span class=tag>{{(val/total_niv*100)|round(0)|int}}%</span></div>
+</div>{% endfor %}
+{% if n0 > 0 %}<div class=gbar>
+  <div class=gl style="color:var(--mut)"><span class=catlink data-tipo=nivel data-val="0" data-lbl="Sem nível" onclick="openTx(this)" title="ver transações">Sem nível</span></div>
+  <div class=gt><div class=gf style="width:{{(n0/total_niv*100)|round(1)}}%;background:#6e7681"></div></div>
+  <div class=gv style="color:var(--mut)">{{n0|brl}} <span class=tag>{{(n0/total_niv*100)|round(0)|int}}%</span></div>
+</div>{% endif %}
+<hr style="border:none;border-top:1px solid var(--ln);margin:10px 0">
+<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:14px">
+  <div><span class=tag>Obrigatório (N1+N2)</span><br><b style="color:#2f81f7">{{obrigatorio|brl}}</b></div>
+  <div><span class=tag>Discricionário (N3)</span><br><b style="color:#ef6c00">{{n3|brl}}</b></div>
+  {% if salario_base > 0 %}
+  <div><span class=tag>Salário base</span><br><b>{{salario_base|brl}}</b></div>
+  <div><span class=tag>Obrig. vs salário</span><br>
+    {% set pct = (obrigatorio*100//salario_base) %}
+    <b style="color:{{'var(--red)' if pct>100 else ('#d29922' if pct>80 else 'var(--grn)')}}">{{pct}}%</b>
+    <span class=tag>{{'⚠️ estourou' if pct>100 else ('⚠️ apertado' if pct>80 else '✅ ok')}}</span>
+  </div>{% else %}
+  <div style="color:var(--mut);font-size:13px">Configure o salário base:<br>
+    <code>finance.sh config salario_base &lt;valor&gt;</code></div>
+  {% endif %}
+</div></div>
+{% if pessoas %}<div class=card><div style="display:flex;align-items:center;margin-bottom:4px"><h3 style="margin:0;flex:1">Distribuição por pessoa (N1/N2/N3)</h3>
+  <a class=tag href="{{url_for('contas.contas')}}">editar titular →</a></div>
+<p class=tag style="margin:0 0 14px">Quanto cada pessoa gasta por essencialidade (titular da conta) — recorrentes + excepcionais, exclui movimentações. % entre N1/N2/N3.</p>
+{% set ncor = {1:'#2f81f7',2:'#3fb950',3:'#ef6c00'} %}
+{% for p in pessoas %}
+<div style="margin:0 0 16px">
+  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+    <b style="font-size:15px">{{p.nome}}</b>
+    <span class=tag>N1+N2+N3 {{p.base|brl}}{% if p.n0>0 %} · sem nível {{p.n0|brl}}{% endif %}</span></div>
+  <div class=pdist>
+    {% for niv,val in [(1,p.n1),(2,p.n2),(3,p.n3)] if val>0 %}
+    <div class=pseg style="flex:{{val}};background:{{ncor[niv]}}" title="N{{niv}}: {{val|brl}} — clique p/ ver lançamentos" data-tipo=pessoanivel data-val="{{niv}}" data-pessoa="{{p.nome}}" data-lbl="{{p.nome}} · N{{niv}}" onclick="openTx(this)">{{(val/p.base*100)|round(0)|int}}%</div>{% endfor %}
+  </div>
+  <div class=pleg>
+    {% for niv,val,nm in [(1,p.n1,'N1 Comprometido'),(2,p.n2,'N2 Necessário'),(3,p.n3,'N3 Discricionário')] %}
+    <span class=plegi data-tipo=pessoanivel data-val="{{niv}}" data-pessoa="{{p.nome}}" data-lbl="{{p.nome}} · N{{niv}}" onclick="openTx(this)" title="ver lançamentos"><i style="background:{{ncor[niv]}}"></i>{{nm}} — {{val|brl}} <b>{{(val/p.base*100)|round(0)|int}}%</b></span>{% endfor %}</div>
+</div>{% endfor %}
+<style>.pdist{display:flex;height:26px;border-radius:7px;overflow:hidden;background:var(--inbg)}
+.pseg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;min-width:0;overflow:hidden;cursor:pointer}
+.pseg:hover{filter:brightness(1.12)}
+.pleg{display:flex;gap:8px 18px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:7px}
+.pleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}.pleg b{color:var(--ink)}
+.plegi{cursor:pointer}.plegi:hover{color:var(--ink)}.plegi:hover b{text-decoration:underline}</style></div>{% endif %}
+<div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por grupo</h3>
+  <a class=tag href="{{url_for('regras.grupos')}}">editar grupos →</a></div>
+{% set pal=['#2f81f7','#3fb950','#ef6c00','#a371f7','#f85149','#00838f','#d29922','#6e7681','#bc8cff'] %}
+{% if grupos %}{% for r in grupos %}<div class=gbar>
+  <div class=gl><span class=catlink data-tipo=grupo data-val="{{r['g']}}" onclick="openTx(this)" title="ver transações">{{r['g']}}</span></div>
+  <div class=gt><div class=gf style="width:{{(r['v']/maxg*100)|round(1)}}%;background:{{pal[loop.index0 % 9]}}"></div></div>
+  <div class=gv>{{r['v']|brl}} <span class=tag>{{(r['v']/totg*100)|round(0)|int}}%</span></div></div>{% endfor %}
+{% else %}<p class=muted>Sem despesas em {{mes}}. <a href="{{url_for('tx.nova')}}">Lançar →</a></p>{% endif %}</div>
+{% if orc %}<div class=card><div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0;flex:1">Orçamento do mês</h3>
+  <a class=tag href="{{url_for('regras.limites')}}">editar limites →</a></div>
+{% for r in orc %}{% set p=(r['spent']*100//r['lim']) %}<div class=gbar>
+  <div class=gl>{{r['cat']}}</div>
+  <div class=gt><div class=gf style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
+  <div class=gv>{{r['spent']|brl}}/{{r['lim']|brl}} <span class=tag>{{p}}%</span></div></div>{% endfor %}</div>{% endif %}
+{% if niv_detail %}<div class=card><h3 style=margin-top:0>Detalhe por essencialidade</h3>
+{% for nv in niv_detail %}
+<div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px">
+  <span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:{{nv.color}}"></span>
+  <b style="color:{{nv.color}}">{{nv.label}}</b>
+  <b style="margin-left:auto" class=neg>{{nv.total|brl}}</b></div>
+<table style="margin-left:19px">{% for cat,v in nv['items'] %}<tr><td><span class=catlink data-tipo=cat data-val="{{cat}}" onclick="openTx(this)" title="ver transações">{{cat}}</span></td><td style=text-align:right class=neg>{{v|brl}}</td></tr>{% endfor %}</table>
+{% endfor %}</div>{% endif %}
+<style>.gbar{display:grid;grid-template-columns:130px 1fr 190px;align-items:center;gap:10px;margin:7px 0}
+.gl{font-size:14px}.gt{background:var(--inbg);border-radius:6px;height:18px;overflow:hidden}
+.gf{height:100%;border-radius:6px;min-width:2px}.gv{text-align:right;font-size:13px}
+.mchart{display:flex;align-items:flex-end;gap:16px;min-height:185px;padding-top:10px;overflow-x:auto}
+.mcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:46px;flex:1}
+.mbars{display:flex;align-items:flex-end;gap:3px}
+.mbar{display:flex;flex-direction:column;justify-content:flex-end;width:18px}
+.mbar>div{border-radius:3px 3px 0 0;min-height:2px}
+.mlbl{font-size:12px;color:var(--mut);margin-top:6px}.mcol.on .mlbl{color:var(--ink);font-weight:700}
+.catlink{cursor:pointer;border-bottom:1px dashed var(--mut)}.catlink:hover{color:var(--acc);border-color:var(--acc)}
+/* modal largo do resumo: só overrides (base define .modal/.modalbox) */
+#catmodal .modalbox{max-width:1040px}
+#catmodal .modalhd{position:sticky;top:0;background:var(--card);border-radius:14px 14px 0 0}
+#catmodal .modalbody{padding:10px 18px 18px;overflow-x:auto}</style>
+<div id=catmodal class=modal onclick="if(event.target==this)closeCat()">
+  <div class=modalbox>
+    <div class=modalhd><b id=catttl></b><button class=mclose onclick=closeCat() title=fechar>✕</button></div>
+    <div id=catbody class=modalbody></div>
+  </div></div>
+<script>window.ACOLOR={{acolor|tojson}};</script>
+<script>
+function openTx(el){var tipo=el.dataset.tipo||'cat',val=el.dataset.val,lbl=el.dataset.lbl||val;
+  var extra=el.dataset.pessoa?('&pessoa='+encodeURIComponent(el.dataset.pessoa)):'';
+  document.getElementById('catttl').textContent='Transações · '+lbl+' · {{mes}}';
+  document.getElementById('catbody').innerHTML='<p class=muted>Carregando…</p>';
+  document.getElementById('catmodal').classList.add('on');
+  fetch('/api/cat_tx?mes={{mes}}&tipo='+tipo+'&val='+encodeURIComponent(val)+extra)
+    .then(function(r){return r.text();}).then(function(h){document.getElementById('catbody').innerHTML=h;})
+    .catch(function(){document.getElementById('catbody').innerHTML='<p class=neg>Erro ao carregar.</p>';});}
+function closeCat(){document.getElementById('catmodal').classList.remove('on');}
+document.addEventListener('keydown',function(e){if(e.key=='Escape')closeCat();});
+</script>
+{% endblock %}

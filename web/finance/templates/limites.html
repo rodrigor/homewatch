@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}<div class=card style=max-width:680px>
+<h3 style=margin-top:0>Limites mensais por categoria</h3>
+<p class=muted>Defina quanto pretende gastar por mês em cada categoria. Quando o gasto do mês chegar a <b>80%</b> e a <b>100%</b>, você recebe um alerta no Telegram. Deixe em branco pra não ter limite.</p>
+<table class=smart><tr><th data-g>Categoria</th><th data-t=num style=width:130px>Limite (R$)</th><th data-nosort>Mês atual</th></tr>
+{% for r in rows %}<tr>
+  <td>{{r['icon']}} {{r['name']}}</td>
+  <td><input value="{{ r['lim']|reais_plain if r['lim'] else '' }}" placeholder="—" onchange="sl('{{r['name']}}',this)"
+    style="width:110px;background:var(--inbg);border:1px solid var(--ln);border-radius:7px;color:var(--ink);padding:7px;text-align:right"></td>
+  <td>{% if r['lim'] %}{% set p=(r['spent']*100//r['lim']) %}
+    <div class=pbar><div class=pfill style="width:{{ [p,100]|min }}%;background:{{ 'var(--red)' if p>=100 else ('#d29922' if p>=80 else 'var(--grn)') }}"></div></div>
+    <span class=tag>{{r['spent']|brl}} · {{p}}%</span>
+  {% else %}<span class=muted>{{r['spent']|brl}} (sem limite)</span>{% endif %}</td></tr>{% endfor %}
+</table></div>
+<style>.pbar{background:var(--inbg);border-radius:5px;height:8px;overflow:hidden;margin-bottom:3px}.pfill{height:100%;border-radius:5px;min-width:2px}</style>
+<script>function sl(name,el){fetch('/api/limite',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+  body:'name='+encodeURIComponent(name)+'&value='+encodeURIComponent(el.value)})
+  .then(r=>r.json()).then(j=>{el.style.borderColor=j.ok?'var(--grn)':'var(--red)';if(j.ok)setTimeout(()=>location.reload(),500);});}</script>
+{% endblock %}

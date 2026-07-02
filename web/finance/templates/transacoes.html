@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_tx.html" import tx_head, tx_rows, tx_total with context %}
+{% block body %}<div class=card><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+<h3 style="margin:0;flex:1">Transações</h3></div>
+<div class=txtabs>
+  {% for a in accs %}<a class="txtab{{' on' if f_conta==a['id']|string}}" style="--ac:{{acolor.get(a['id'],'var(--acc)')}}" href="{{url_for('tx.transacoes',mes=mes,de=de,ate=ate,conta=a['id'],categoria=f_cat,status=f_status,q=q)}}">{{a['name']}}</a>{% endfor %}
+  <a class="txtab{{' on' if not f_conta}}" href="{{url_for('tx.transacoes',mes=mes,de=de,ate=ate,categoria=f_cat,status=f_status,q=q)}}">Todas</a>
+</div>
+<form class=filtros>
+  <input type=month name=mes value="{{mes}}" class="{{'fon' if not (de or ate)}}" {{'disabled' if de or ate}} onchange=this.form.submit() title="mês (ignorado quando há intervalo de datas)">
+  <span class=daterange>de <input type=date name=de value="{{de}}" class="{{'fon' if de}}" onchange=this.form.submit()> até <input type=date name=ate value="{{ate}}" class="{{'fon' if ate}}" onchange=this.form.submit()></span>
+  {% if f_conta %}<input type=hidden name=conta value="{{f_conta}}">{% endif %}
+  <select name=categoria class="{{'fon' if f_cat}}" onchange=this.form.submit()><option value="">Categoria: todas</option>
+    <option value="__sem__" {{'selected' if f_cat=='__sem__'}}>— sem categoria —</option>
+    <optgroup label="Por nível">
+      <option value="n1" {{'selected' if f_cat=='n1'}}>N1 — Comprometido</option>
+      <option value="n2" {{'selected' if f_cat=='n2'}}>N2 — Necessário variável</option>
+      <option value="n3" {{'selected' if f_cat=='n3'}}>N3 — Discricionário</option>
+      <option value="n0" {{'selected' if f_cat=='n0'}}>N0 — neutro</option></optgroup>
+    {% for g,names in cat_groups.items() %}<optgroup label="{{g}}">
+      {% for nm in names %}<option {{'selected' if f_cat==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select>
+  <select name=status class="{{'fon' if f_status}}" onchange=this.form.submit()><option value="">Status: todos</option>
+    {% for s in statuses %}<option {{'selected' if f_status==s}}>{{s}}</option>{% endfor %}</select>
+  <input name=q value="{{q}}" class="{{'fon' if q}}" placeholder="buscar…" onkeydown="if(event.key=='Enter')this.form.submit()">
+  {% if f_cat or f_status or q or de or ate %}<a href="{{url_for('tx.transacoes',mes=mes,conta=f_conta)}}" class=muted>limpar</a>{% endif %}
+</form>
+<div class=slegend>
+  Status: {% for s in statuses %}<b>{{glyph[s]}}</b> {{s}}{{ ' · ' if not loop.last }}{% endfor %}
+  &nbsp;·&nbsp; Origem: {% for k,lbl in src_labels.items() %}<span class=srcico style="vertical-align:middle">{{ src_icons[k] | safe }}</span> {{lbl}}{{ ' · ' if not loop.last }}{% endfor %}
+</div>
+<table id=tx class=txtbl>{{ tx_head() }}
+<tr class="newrow skip">
+  <td><input type=datetime-local id=n_date class=dt></td>
+  <td><input id=n_desc placeholder="+ nova transação…"></td>
+  <td><input id=n_fav placeholder="favorecido"></td>
+  <td><select id=n_cat><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+  {% if show_conta %}<td><select id=n_acc><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>{% endif %}
+  <td><select id=n_status class=stsel>{% for s in statuses %}<option value="{{s}}" {{'selected' if s=='confirmado'}}>{{glyph[s]}}</option>{% endfor %}</select></td>
+  <td><input id=n_val class=val placeholder="-45,90" style=text-align:right></td>
+  <td class=txact><button class=addb onclick="addtx()" title="adicionar">＋</button></td></tr>
+{{ tx_rows() }}{{ tx_total() }}</table>
+{% if not rows %}<p class=muted style=margin-top:10px>Nenhuma transação no filtro. Use a primeira linha pra adicionar.</p>{% endif %}
+</div>
+<div class=modal id=splitm>
+  <div class=modalbox style=max-width:560px>
+    <div class=modalhd><b>Dividir lançamento</b><button class=mclose onclick="document.getElementById('splitm').classList.remove('on')">✕</button></div>
+    <div class=modalbody>
+      <p class=muted style="margin:0 0 12px">Total a dividir: <b id=splittot>0,00</b> &nbsp;·&nbsp; Restante: <b id=splitrem>0,00</b></p>
+      <div id=splitrows></div>
+      <select id=splitopts style=display:none><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class=spadd onclick="addSplitLine(0)">+ linha</button>
+        <button id=splitsave class=spsave onclick="splitSave()">Salvar divisão</button>
+      </div>
+      <p class=muted style="margin:10px 0 0;font-size:12px">A 1ª parte mantém a conciliação bancária (FITID) do lançamento original. A soma das partes precisa fechar o total.</p>
+    </div>
+  </div>
+</div>
+<script>window.TXACC={{ (f_conta or '')|tojson }};window.ACOLOR={{acolor|tojson}};</script>
+<style>.wrap{max-width:none}.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}.filtros>*{font-size:13px}.slegend{font-size:12px;color:var(--mut);margin-top:10px}
+.daterange{display:inline-flex;align-items:center;gap:5px;color:var(--mut);font-size:12px}.daterange input{font-size:13px}
+.txtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--ln);margin-bottom:14px}
+.txtab{padding:8px 14px;border:1px solid var(--ln);border-bottom:0;border-radius:9px 9px 0 0;color:var(--mut);background:var(--card);margin-bottom:-1px;font-size:13px;border-top:3px solid transparent}
+.txtab:hover{color:var(--ink)}
+.txtab.on{color:var(--ink);font-weight:700;background:var(--bg);border-top:3px solid var(--ac,var(--acc))}</style>
+{% endblock %}

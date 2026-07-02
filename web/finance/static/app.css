@@ -1,0 +1,66 @@
+/* Finanças PIrrai — estilos globais (base + smart-table + tabela de transações) */
+
+/* ---------- base / tema ---------- */
+:root,html[data-theme=dark]{--bg:#0f1419;--card:#1a2230;--ink:#e6edf3;--mut:#8b98a9;--ln:#263041;--acc:#2f81f7;--red:#f85149;--grn:#3fb950;--inbg:#0d1117}
+html[data-theme=light]{--bg:#f5f7fa;--card:#ffffff;--ink:#1a2230;--mut:#5b6776;--ln:#d8dee6;--acc:#1f6feb;--red:#d1242f;--grn:#1a7f37;--inbg:#eef1f5}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:var(--acc);text-decoration:none}.wrap{max-width:none;margin:0 auto;padding:18px 26px}
+header{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--ln);padding:14px 18px;background:var(--card)}
+header b{font-size:18px}header nav{display:flex;gap:14px;margin-left:auto;align-items:center}
+.themebtn{background:transparent;border:0;padding:0 2px;font-size:16px;line-height:1;cursor:pointer;color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:12px;margin-bottom:18px}
+.kpi .v{font-size:19px;font-weight:700;white-space:nowrap;letter-spacing:-.3px}.kpi .l{color:var(--mut);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--ln)}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.neg{color:var(--red)}.pos{color:var(--grn)}.tag{font-size:12px;color:var(--mut)}
+input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--ln);background:var(--inbg);color:var(--ink)}
+.fon{border-color:var(--acc)!important;box-shadow:0 0 0 1px var(--acc);font-weight:600}
+button,.btn{background:var(--acc);border:0;color:#fff;cursor:pointer;font-weight:600;padding:9px 16px}
+.flash{background:#1f6feb22;border:1px solid var(--acc);padding:10px 14px;border-radius:9px;margin-bottom:14px}
+form.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
+.full{grid-column:1/-1}.muted{color:var(--mut)}
+
+/* ---------- modal (definição única — páginas só sobrescrevem tamanho) ---------- */
+.modal{display:none;position:fixed;inset:0;background:#000a;z-index:50;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal.on{display:flex}
+.modalbox{background:var(--card);border:1px solid var(--ln);border-radius:14px;max-width:560px;width:100%;box-shadow:0 20px 60px #000a}
+.modalhd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--ln)}
+.modalhd b{flex:1}.mclose{background:transparent;border:0;color:var(--mut);font-size:18px;cursor:pointer;padding:0 4px}.mclose:hover{color:var(--red)}
+.modalbody{padding:16px 18px 18px}
+
+/* ---------- smart-table ---------- */
+.smartbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+.smartbar input,.smartbar select{font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--ln);background:var(--inbg);color:var(--ink)}
+.smartbar .btn{padding:7px 12px}
+table.smart th .sc{color:var(--acc);font-size:11px;margin-left:2px}
+table.smart tr.grouphdr td{background:var(--inbg)}table.smart tr.smarttot td{border-top:2px solid var(--ln)}
+
+/* ---------- tabela de transações ---------- */
+.txtbl{font-size:13px}.txtbl td,.txtbl th{padding:6px 6px}.txtbl .dt{max-width:195px}.txtbl .st{max-width:70px}
+.txtbl input,.txtbl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+.txtbl input:hover,.txtbl select:hover{border-color:var(--ln)}.txtbl input:focus,.txtbl select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
+.txtbl .val.neg{color:var(--red)}.txtbl .val.pos{color:var(--grn)}.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
+.stsel{max-width:56px;text-align:center;font-size:15px;font-weight:700}
+tr.st-pendente .stsel{color:#d29922}tr.st-confirmado .stsel{color:var(--grn)}tr.st-conciliado .stsel{color:#2f81f7}tr.st-importado .stsel{color:var(--red)}tr.st-agendado .stsel{color:#a371f7}
+.acct{border-left:4px solid var(--ac,transparent)!important;padding-left:8px!important}
+.srcico{display:inline-flex;align-items:center;margin-right:4px;color:var(--mut);vertical-align:middle;opacity:.7}
+.srcico:hover{opacity:1}
+.slegend{font-size:12px;color:var(--mut);margin-bottom:8px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.txact{white-space:nowrap;text-align:right}.txact button{background:transparent;border:0;cursor:pointer;font-size:14px;padding:3px 5px;color:var(--mut)}
+.txact .edt:hover{color:var(--acc)}.txact .del:hover{color:var(--red)}.txact .excb.on{color:#d29922}.txact .excb:hover{color:#d29922}.txact .addb{background:var(--grn);color:#fff;border-radius:6px;padding:3px 11px;font-weight:700;font-size:15px}
+tr.editing td{background:#2f81f714}tr.newrow{background:#2f81f714}tr.st-pendente{background:#f0883e0e}tr.st-conciliado{background:#3fb9500a}tr.st-importado{background:#f8514910}
+.txtbl tr.drow:not(.editing) input,.txtbl tr.drow:not(.editing) select{pointer-events:none}
+.txtbl tr.drow:not(.editing) [data-k=cat] select{-webkit-appearance:none;-moz-appearance:none;appearance:none;text-indent:0}
+.txtbl tr.editing .edt{color:var(--acc)}
+
+/* ---------- split (lançamento composto) ---------- */
+.spmark{color:var(--mut);font-size:13px;padding:3px 5px;cursor:default}
+.txact .splb:hover{color:var(--acc)}
+#splitrows .splitrow{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+#splitrows .sp_cat{flex:1;background:var(--inbg);border:1px solid var(--ln);border-radius:6px;color:var(--ink);padding:6px;font-size:13px}
+#splitrows .sp_val{width:120px;text-align:right;background:var(--inbg);border:1px solid var(--ln);border-radius:6px;color:var(--ink);padding:6px;font-size:13px}
+#splitrows .spdel{background:transparent;border:0;color:var(--mut);cursor:pointer;font-size:14px}#splitrows .spdel:hover{color:var(--red)}
+.spadd{background:var(--ln);color:var(--ink);border:0;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px}
+.spsave{margin-left:auto;background:var(--grn);color:#fff;border:0;border-radius:7px;padding:7px 14px;cursor:pointer;font-weight:700;font-size:13px}
+.spsave:disabled{opacity:.45;cursor:not-allowed}

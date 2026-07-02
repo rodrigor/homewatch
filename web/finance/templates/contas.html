@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block body %}<div class=card>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+  <h3 style="margin:0;flex:1">Contas</h3>
+  <button onclick="openNew()" style="background:var(--grn);border:0;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer">＋ Nova conta</button>
+  <a href="{{url_for('contas.transferencia')}}" class=muted>↔ Transferência</a>
+  <a href="{{url_for('contas.investimentos')}}" class=muted>📈 Investimentos</a>
+</div>
+<p class=muted style="margin:0 0 12px">Saldo = saldo inicial + soma das transações vinculadas. Clique em ✎ para editar.</p>
+<table id=acc class=smart>
+<tr><th>Nome</th><th data-f data-g>Titular</th><th data-f data-g>Banco</th><th data-f data-g>Tipo</th><th data-f>Moeda</th><th data-t=num style=text-align:right>Saldo atual</th><th data-t=num style=text-align:right>Uso</th><th data-nosort></th></tr>
+{% for r in rows %}<tr>
+  <td><span class=cdot style="background:{{r['color'] or '#888'}}"></span>{{r['name']}}</td>
+  <td>{{r['titular'] or '—'}}</td>
+  <td>{{r['bank'] or '—'}}</td>
+  <td>{{r['type'] or '—'}}</td>
+  <td>{{r['moeda']}}{% if (r['iof_rate'] or 0) or (r['spread_rate'] or 0) %}<span class=rtag title="IOF {{'%.2f'|format((r['iof_rate'] or 0)*100)}}% · Spread {{'%.2f'|format((r['spread_rate'] or 0)*100)}}%">· IOF {{'%g'|format((r['iof_rate'] or 0)*100)}}%</span>{% endif %}{% if r['entra_orcamento']==0 %}<span class=rtag title="não entra no orçamento">· fora do orç.</span>{% endif %}</td>
+  <td style="text-align:right;font-weight:700" class="{{'pos' if r['saldo']>=0 else 'neg'}}">{{r['saldo']|money(r['moeda'])}}</td>
+  <td style="text-align:right" class=tag>{{r['usos']}}</td>
+  <td style="text-align:right;white-space:nowrap"><button class=icob onclick="openEdit({{r['id']}})" title=editar>✎</button><button class=icob onclick="delAcc({{r['id']}},{{r['usos']}})" title=excluir>✕</button></td>
+</tr>{% endfor %}
+{% for cur,val in saldos %}<tr class="totrow skip"><td colspan=4></td><td style=text-align:right class=muted>Patrimônio{% if saldos|length>1 %} {{cur}}{% endif %}</td><td style="text-align:right;font-weight:700" class="{{'pos' if val>=0 else 'neg'}}">{{val|money(cur)}}</td><td></td><td></td></tr>{% endfor %}
+</table></div>
+
+<div class=modal id=accmodal onclick="if(event.target==this)closeAcc()">
+  <div class=modalbox>
+    <div class=modalhd><b id=accttl>Editar conta</b><button class=mclose onclick=closeAcc() title=fechar>✕</button></div>
+    <div class=modalbody>
+      <input type=hidden id=m_id>
+      <div class=mgrid>
+        <div class=full><label>Nome</label><input id=m_name></div>
+        <div><label>Titular</label><select id=m_titular><option value="">—</option>{% for t in titulares %}<option>{{t}}</option>{% endfor %}</select></div>
+        <div><label>Banco</label><input id=m_bank></div>
+        <div><label>Número</label><input id=m_num></div>
+        <div><label>Tipo</label><select id=m_type>{% for t in types %}<option>{{t}}</option>{% endfor %}</select></div>
+        <div><label>Moeda</label><select id=m_curr onchange=toggleRates()>{% for cur in currencies %}<option>{{cur}}</option>{% endfor %}</select></div>
+        <div><label>Cor</label><input type=color id=m_color style="height:38px;padding:2px"></div>
+        <div><label>Saldo inicial</label><input type=number step=0.01 id=m_ob></div>
+        <div id=m_iofwrap><label>IOF %</label><input type=number step=0.01 id=m_iof></div>
+        <div id=m_spreadwrap><label>Spread %</label><input type=number step=0.01 id=m_spread></div>
+        <div class=full style="display:flex;align-items:center;gap:8px;margin-top:2px">
+          <input type=checkbox id=m_orc style="width:auto"><label for=m_orc style="margin:0;cursor:pointer">Entra no orçamento (receitas/despesas/teto)</label></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">
+        <button onclick=closeAcc() style="background:transparent;border:1px solid var(--ln);color:var(--ink)">Cancelar</button>
+        <button onclick=saveAcc()>Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+#acc td,#acc th{padding:9px 10px}
+.cdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.rtag{color:var(--mut);font-size:12px;margin-left:6px}
+tr.totrow td{border-top:2px solid var(--ln);background:#8881}
+.icob{background:transparent;border:0;color:var(--mut);padding:4px 7px;font-size:14px;cursor:pointer}.icob:hover{color:var(--acc)}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mgrid .full{grid-column:1/-1}
+.mgrid label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px;font-weight:600}
+.mgrid input,.mgrid select{width:100%}
+</style>
+<script>
+window.ACCTS = {{ accts_json|safe }};
+function _g(i){return document.getElementById(i);}
+function fill(a){a=a||{};_g('m_id').value=a.id||'';_g('m_name').value=a.name||'';_g('m_titular').value=a.titular||'';
+  _g('m_bank').value=a.bank||'';_g('m_num').value=a.numero||'';_g('m_type').value=a.type||'corrente';
+  _g('m_curr').value=a.currency||'BRL';_g('m_color').value=a.color||'#2f81f7';
+  _g('m_ob').value=((a.opening_balance||0)/100).toFixed(2);
+  _g('m_iof').value=((a.iof_rate||0)*100).toFixed(2);_g('m_spread').value=((a.spread_rate||0)*100).toFixed(2);
+  _g('m_orc').checked=(a.entra_orcamento===undefined?true:!!a.entra_orcamento);
+  toggleRates();}
+function toggleRates(){var multi=_g('m_curr').value!=='BRL';_g('m_iofwrap').style.display=multi?'':'none';_g('m_spreadwrap').style.display=multi?'':'none';}
+function openEdit(id){fill(ACCTS[id]);_g('accttl').textContent='Editar conta';_g('accmodal').classList.add('on');}
+function openNew(){fill(null);_g('accttl').textContent='Nova conta';_g('accmodal').classList.add('on');_g('m_name').focus();}
+function closeAcc(){_g('accmodal').classList.remove('on');}
+function saveAcc(){var id=_g('m_id').value;
+  if(!_g('m_name').value.trim()){alert('Informe o nome da conta.');return;}
+  var ob=Math.round((parseFloat((_g('m_ob').value||'0').replace(',','.'))||0)*100);
+  var body=new URLSearchParams({name:_g('m_name').value,titular:_g('m_titular').value,bank:_g('m_bank').value,
+    numero:_g('m_num').value,type:_g('m_type').value,currency:_g('m_curr').value,color:_g('m_color').value,
+    opening_balance:ob,iof_rate:_g('m_iof').value||'0',spread_rate:_g('m_spread').value||'0',
+    entra_orcamento:_g('m_orc').checked?'1':'0'}).toString();
+  var url=id?('/api/account/'+id+'/save'):'/api/account/new';
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+    .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
+function delAcc(id,usos){if(!confirm(usos>0?('Esta conta tem '+usos+' transações; elas ficarão sem conta. Excluir?'):'Excluir conta?'))return;
+  fetch('/api/account/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+</script>
+{% endblock %}

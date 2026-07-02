@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block body %}<div class=card>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;flex:1">Despesas por favorecido</h3>
+  <a class=tag href="{{url_for('fav.favorecidos_gerir')}}">gerenciar favorecidos →</a></div>
+<form class=ffil>
+  <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
+  {% if not todos %}<input type=month name=mes value="{{mes}}" class=fon onchange=this.form.submit()>{% endif %}
+  <input name=q value="{{q}}" class="{{'fon' if q}}" placeholder="buscar favorecido…" onkeydown="if(event.key=='Enter')this.form.submit()">
+  {% if q or todos %}<a href="{{url_for('fav.favorecidos')}}" class=muted>limpar</a>{% endif %}
+</form>
+<p class=muted style=margin:4px 0 12px>{{rows|length}} favorecidos · total <b class=neg>{{total|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
+{% if rows %}<table class=smart><tr><th>Favorecido / Estabelecimento</th><th data-f data-g>Categoria</th><th data-t=num style=text-align:center>Qtd</th><th data-t=num data-sum style=text-align:right>Total</th><th data-nosort style=width:130px></th></tr>
+{% for r in rows %}<tr>
+  <td><a href="{{url_for('fav.favorecido_det', nome=r['dest'], mes=mes, todos=todos)}}">{{r['dest']}}</a></td><td class=tag>{{r['cat']}}</td>
+  <td style=text-align:center class=tag>{{r['qt']}}×</td>
+  <td style=text-align:right class=neg>{{r['total']|brl}}</td>
+  <td><div class=fbar><div class=ffill style="width:{{(r['total']/maxv*100)|round(1)}}%"></div></div></td></tr>{% endfor %}
+</table>{% else %}<p class=muted>Nenhuma despesa no período.</p>{% endif %}</div>
+<style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}
+.fbar{background:var(--inbg);border-radius:5px;height:8px;overflow:hidden}.ffill{height:100%;background:var(--red);border-radius:5px;min-width:2px}</style>
+{% endblock %}

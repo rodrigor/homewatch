@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}<div class=card style=max-width:560px>
+<h3 style=margin-top:0>Conciliação bancária (OFX)</h3>
+<p class=muted>Envie o extrato OFX do banco. Eu caso cada lançamento com o que já existe (mesmo valor, data ±2 dias) e marco como <b>conciliado</b>; o que não casar entra como <b>importado</b> pra você revisar.</p>
+<form method=post enctype=multipart/form-data style="display:flex;gap:10px;align-items:center">
+  <input type=file name=ofx accept=".ofx,.qfx,text/*" required><button>Importar</button></form></div>
+<div class=grid style=margin-top:16px>
+  <div class="card kpi"><div class=l>A revisar (importado)</div><div class=v>{{nimp}}</div>
+    {% if nimp %}<div class=tag><a href="{{url_for('tx.transacoes',status='importado')}}">revisar →</a></div>{% endif %}</div>
+  <div class="card kpi"><div class=l>Conciliadas</div><div class="v pos">{{ncon}}</div></div></div>
+{% if last %}<div class=card style=margin-top:16px><h3 style=margin-top:0>Importações recentes</h3>
+<table class=smart><tr><th>Arquivo</th><th data-t=date>Quando</th><th data-t=num>Conciliadas</th><th data-t=num>Novas</th></tr>
+{% for r in last %}<tr><td>{{r['filename']}}</td><td class=tag>{{r['imported_at']}}</td>
+<td>{{r['matched']}}</td><td>{{r['unmatched']}}</td></tr>{% endfor %}</table></div>{% endif %}
+{% endblock %}

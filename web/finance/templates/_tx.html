@@ -1,0 +1,24 @@
+{# Componente de listagem de TRANSAÇÕES (colunas padrão + edição inline + ✎/❗/✕).
+   Importar com contexto: {% from "_tx.html" import tx_head, tx_rows, tx_total with context %}
+   Espera no contexto: rows, cat_groups, accs, acolor, statuses, glyph, src_icons,
+   e opcionais show_conta, val_label, totais, tot. #}
+{% macro tx_head() %}<tr>
+  <th class=dt onclick="txsort(this,'data')" style=cursor:pointer>Data <span class=sc></span></th>
+  <th onclick="txsort(this,'desc')" style=cursor:pointer>Descrição <span class=sc></span></th>
+  <th onclick="txsort(this,'fav')" style=cursor:pointer>Favorecido <span class=sc></span></th>
+  <th onclick="txsort(this,'cat')" style=cursor:pointer>Categoria <span class=sc></span></th>
+  {% if show_conta|default(true) %}<th onclick="txsort(this,'conta')" style=cursor:pointer>Conta <span class=sc></span></th>{% endif %}
+  <th class=st onclick="txsort(this,'status')" style="cursor:pointer;text-align:center">Status <span class=sc></span></th>
+  <th class=vl onclick="txsort(this,'valor')" style="cursor:pointer;text-align:right">Valor ({{ val_label|default('R$') }}) <span class=sc></span></th>
+  <th style=text-align:right></th></tr>{% endmacro %}
+{% macro tx_rows() %}{% for r in rows %}<tr class="drow st-{{r['status']}}">
+  <td data-k=data><input type=datetime-local class=dt value="{{r['date']}}T{{(r['time'] or '00:00')[:5]}}" onchange="sv({{r['id']}},'datetime',this)"></td>
+  <td data-k=desc><input value="{{r['description'] or ''}}" onchange="sv({{r['id']}},'description',this)"></td>
+  <td data-k=fav><input value="{{r['favorecido'] or ''}}" onchange="sv({{r['id']}},'favorecido',this)"></td>
+  <td data-k=cat><select onchange="sv({{r['id']}},'category',this)"><option value="">—</option>{% for g,names in cat_groups.items() %}<optgroup label="{{g}}">{% for nm in names %}<option {{'selected' if r['category']==nm}}>{{nm}}</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+  {% if show_conta|default(true) %}<td data-k=conta><select class=acct style="--ac:{{ acolor.get(r['account_id'],'transparent') }}" onchange="sacc({{r['id']}},this)"><option value="">—</option>{% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>{% endif %}
+  <td data-k=status><span class=srcico title="{{r['source']}}">{{ src_icons.get(r['source'] or 'manual', src_icons['manual']) | safe }}</span><select class=stsel title="{{r['status']}}" onchange="sv({{r['id']}},'status',this)">{% for s in statuses %}<option value="{{s}}" {{'selected' if r['status']==s}}>{{glyph[s]}}</option>{% endfor %}</select></td>
+  <td data-k=valor>{% if r['currency'] and r['currency']!='BRL' %}<span title="{{r['currency']}}" style="font-size:11px;color:var(--mut);margin-right:4px;vertical-align:middle">{{cursym(r['currency'])}}</span>{% endif %}<input class="val {{'pos' if r['amount']>0 else 'neg'}}" value="{{r['amount']|reais_plain}}" onchange="sv({{r['id']}},'amount',this)" style=text-align:right></td>
+  <td class=txact><button class=edt onclick="edt(this)" title="editar / bloquear">✎</button><button class="excb {{'on' if r['excepcional']}}" onclick="sx({{r['id']}},this)" title="excepcional (fora do normal)">❗</button>{% if r['split_group'] %}<span class=spmark title="parte de lançamento dividido (grupo {{r['split_group']}})">⊂</span>{% else %}<button class=splb onclick="splitOpen({{r['id']}},'{{r['amount']|reais_plain}}')" title="dividir lançamento">✂</button>{% endif %}<button class=del onclick="dl({{r['id']}})" title=excluir>✕</button></td>
+</tr>{% endfor %}{% endmacro %}
+{% macro tx_total() %}{% if rows %}{% if totais is defined and totais %}{% for cur,val in totais %}<tr class=totrow><td colspan="{{ 6 if show_conta|default(true) else 5 }}" style=text-align:right class=muted>Total{% if totais|length>1 %} {{cur}}{% endif %}</td><td style=text-align:right class="{{'pos' if val>0 else 'neg'}}"><b>{{val|money(cur)}}</b></td><td></td></tr>{% endfor %}{% else %}<tr class=totrow><td colspan="{{ 6 if show_conta|default(true) else 5 }}" style=text-align:right class=muted>Total</td><td style=text-align:right class="{{'pos' if tot>0 else 'neg'}}"><b>{{tot|brl}}</b></td><td></td></tr>{% endif %}{% endif %}{% endmacro %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}<div class=card>
+<h3 style=margin-top:0>📈 Investimentos</h3>
+<p class=muted>Contas com tipo <b>investimento</b> ou com lançamentos de rendimento.
+  Aportes/resgates via <a href="{{url_for('contas.transferencia')}}">↔ Transferência</a>.
+  Rendimento: use <code>finance.sh rendimento "Conta" valor</code> ou registre manualmente.</p>
+{% if not rows %}
+<p class=muted>Nenhuma conta de investimento encontrada. Crie uma conta com tipo <b>investimento</b> em <a href="{{url_for('contas.contas')}}">Contas</a>.</p>
+{% else %}
+<table id=itbl class=smart>
+<tr><th>Conta</th><th>Moeda</th><th data-t=num>Aportes</th><th data-t=num>Resgates</th><th data-t=num>Rendimento</th><th data-t=num>Saldo</th><th data-t=num>Rentabilidade</th><th>Última valorização</th></tr>
+{% set totais_saldo = namespace(v=0) %}
+{% set totais_rend  = namespace(v=0) %}
+{% for r in rows %}
+{% set totais_saldo.v = totais_saldo.v + r.saldo %}
+{% set totais_rend.v  = totais_rend.v  + r.rendimento %}
+<tr>
+  <td><b>{{r.name}}</b></td>
+  <td><span class=tag>{{r.currency}}</span></td>
+  <td class=num>{{'{:,.2f}'.format(r.aportes/100)}}</td>
+  <td class=num style="color:var(--mut)">{{'{:,.2f}'.format(r.resgates/100)}}</td>
+  <td class=num style="color:{{'var(--grn)' if r.rendimento>=0 else 'var(--red)'}}">
+    {{('+' if r.rendimento>=0 else '')}}{{'{:,.2f}'.format(r.rendimento/100)}}</td>
+  <td class=num><b style="color:{{'var(--grn)' if r.saldo>=0 else 'var(--red)'}}">{{'{:,.2f}'.format(r.saldo/100)}}</b></td>
+  <td class=num style="color:{{'var(--grn)' if r.rent_pct>=0 else 'var(--red)'}}">
+    {{('+' if r.rent_pct>=0 else '')}}{{'{:.2f}'.format(r.rent_pct)}}%</td>
+  <td style="font-size:12px;color:var(--mut)">
+    {% if r.last_val_value is not none %}{{'{:,.2f}'.format(r.last_val_value/100)}} em {{r.last_val_date}}
+    {% else %}—{% endif %}</td>
+</tr>{% endfor %}
+<tr style="border-top:2px solid var(--ln);font-weight:700">
+  <td colspan=5 style="text-align:right;color:var(--mut)">Total</td>
+  <td class=num style="color:{{'var(--grn)' if totais_saldo.v>=0 else 'var(--red)'}}">{{'{:,.2f}'.format(totais_saldo.v/100)}}</td>
+  <td></td><td></td>
+</tr>
+</table>
+{% endif %}
+</div>
+<style>#itbl{font-size:13px}.num{text-align:right}#itbl td,#itbl th{padding:8px 10px}</style>
+{% endblock %}

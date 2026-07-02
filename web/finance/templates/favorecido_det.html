@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_tx.html" import tx_head, tx_rows, tx_total with context %}
+{% block body %}<div class=card>
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+  <a href="{{url_for('fav.favorecidos')}}" class=muted>← favorecidos</a>
+  <h3 style="margin:0">{{nome}}</h3></div>
+<form class=ffil><input type=hidden name=nome value="{{nome}}">
+  <label style="display:flex;align-items:center;gap:6px"><input type=checkbox name=todos value=1 {{'checked' if todos}} onchange=this.form.submit()> Todos os meses</label>
+  {% if not todos %}<input type=month name=mes value="{{mes}}" onchange=this.form.submit()>{% endif %}</form>
+<p class=muted style=margin:4px 0 12px>{{rows|length}} lançamentos · total <b class="{{'pos' if tot>0 else 'neg'}}">{{tot|brl}}</b>{% if not todos %} em {{mes}}{% endif %}</p>
+<table class=txtbl>{{ tx_head() }}{{ tx_rows() }}{{ tx_total() }}</table>
+{% if not rows %}<p class=muted>Sem lançamentos no período.</p>{% endif %}</div>
+<style>.ffil{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.ffil>*{font-size:13px}</style>
+<script>window.ACOLOR={{acolor|tojson}};</script>
+{% endblock %}

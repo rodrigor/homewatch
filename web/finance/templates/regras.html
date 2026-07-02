@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block body %}<div class=card>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+  <h3 style="margin:0;flex:1">Regras de classificação</h3>
+  <form method=post action="{{url_for('regras.regras_aplicar')}}"><button class=btn>Aplicar às transações</button></form></div>
+<p class=muted>Quando o campo escolhido <b>contém</b> o texto, a transação recebe a categoria. Restrições opcionais: <b>Conta</b> (só naquela conta) e <b>Dias</b> (dia do mês entre mín–máx — útil p/ débito automático, absorve fim de semana / próximo dia útil / variação de ciclo). <b>→ favorecido</b> (opcional) preenche o favorecido quando estiver vazio. Ex.: <i>Descrição</i> contém <i>Débito em conta</i>, conta <i>Nu Rodrigo</i>, dias <i>7–13</i> → <i>Energia elétrica</i> / <i>Energisa</i>. As regras valem p/ lançamentos novos e extratos importados; o botão acima reaplica nas já existentes.</p>
+<datalist id=cats>{% for ct in cats %}<option value="{{ct['name']}}">{% endfor %}</datalist>
+<table id=rl class=smart><tr><th data-f data-g>Campo</th><th>contém</th><th data-nosort>Conta</th><th data-nosort>Dias</th><th data-f data-g>→ categoria</th><th data-nosort>→ favorecido</th><th data-nosort></th></tr>
+<tr class="newrow skip">
+  <td><select id=r_field>{% for v,lbl in fields %}<option value="{{v}}">{{lbl}}</option>{% endfor %}</select></td>
+  <td><input id=r_pat placeholder="ex: Joane"></td>
+  <td><select id=r_acc><option value="">qualquer</option>{% for a in accs %}<option value="{{a['id']}}">{{a['name']}}</option>{% endfor %}</select></td>
+  <td><span class=dayrange><input id=r_dmin type=number min=1 max=31 placeholder=mín><input id=r_dmax type=number min=1 max=31 placeholder=máx></span></td>
+  <td><input id=r_cat list=cats placeholder="ex: Doméstica"></td>
+  <td><input id=r_fav placeholder="(opcional)"></td>
+  <td><button class=addb onclick="addr()" title=adicionar>＋</button></td></tr>
+{% for r in rows %}<tr>
+  <td><select onchange="sr({{r['id']}},'field',this)">{% for v,lbl in fields %}<option value="{{v}}" {{'selected' if r['field']==v}}>{{lbl}}</option>{% endfor %}</select></td>
+  <td><input value="{{r['pattern']}}" onchange="sr({{r['id']}},'pattern',this)"></td>
+  <td><select onchange="sr({{r['id']}},'account_id',this)"><option value="">qualquer</option>{% for a in accs %}<option value="{{a['id']}}" {{'selected' if r['account_id']==a['id']}}>{{a['name']}}</option>{% endfor %}</select></td>
+  <td><span class=dayrange><input type=number min=1 max=31 value="{{r['dom_min'] if r['dom_min'] is not none else ''}}" onchange="sr({{r['id']}},'dom_min',this)" placeholder="–"><input type=number min=1 max=31 value="{{r['dom_max'] if r['dom_max'] is not none else ''}}" onchange="sr({{r['id']}},'dom_max',this)" placeholder="–"></span></td>
+  <td><input list=cats value="{{r['category']}}" onchange="sr({{r['id']}},'category',this)"></td>
+  <td><input value="{{r['set_fav'] or ''}}" onchange="sr({{r['id']}},'set_fav',this)" placeholder="—"></td>
+  <td><button class=del onclick="dlr({{r['id']}})" title=excluir>✕</button></td></tr>{% endfor %}
+</table>{% if not rows %}<p class=muted style=margin-top:10px>Nenhuma regra ainda. Use a primeira linha.</p>{% endif %}</div>
+<style>#rl{font-size:13px}#rl td,#rl th{padding:6px 6px}#rl input,#rl select{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:5px 6px;width:100%;font-size:13px}
+#rl input:hover,#rl select:hover{border-color:var(--ln)}#rl input:focus,#rl select:focus{border-color:var(--acc);background:var(--inbg);outline:none}
+#rl .dayrange{display:flex;gap:3px}#rl .dayrange input{width:48px;text-align:center}
+.saved{background:#3fb95033!important}.err{border-color:var(--red)!important}
+button.del{background:transparent;color:var(--mut);padding:4px 8px;font-size:14px}button.del:hover{color:var(--red)}
+button.addb{background:var(--grn);color:#fff;border:0;border-radius:6px;padding:3px 11px;cursor:pointer;font-weight:700;font-size:15px}
+tr.newrow{background:#2f81f714}</style>
+<script>
+function sr(id,field,el){fetch('/api/rule/'+id,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+  body:'field='+field+'&value='+encodeURIComponent(el.value)}).then(r=>r.json())
+  .then(j=>{el.classList.remove('err','saved');el.classList.add(j.ok?'saved':'err');setTimeout(()=>el.classList.remove('saved'),700);});}
+function addr(){const g=i=>document.getElementById(i).value;
+  if(!g('r_pat')||!g('r_cat')){alert('Preencha o texto e a categoria.');return;}
+  const b=new URLSearchParams({field:g('r_field'),pattern:g('r_pat'),category:g('r_cat'),
+    conta:g('r_acc'),dom_min:g('r_dmin'),dom_max:g('r_dmax'),set_fav:g('r_fav')}).toString();
+  fetch('/api/rule/new',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})
+  .then(r=>r.json()).then(j=>{if(j.ok)location.reload();else alert(j.err||'erro');});}
+function dlr(id){if(!confirm('Excluir regra?'))return;fetch('/api/rule/'+id+'/delete',{method:'POST'}).then(()=>location.reload());}
+</script>
+{% endblock %}
