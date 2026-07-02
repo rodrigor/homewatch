@@ -2,9 +2,15 @@
 config.env
 email.env
 todoist.env
+agenda.env
+gcal_client.json
+gcal_token.json
+gcal.env
 finance.env
 finance_users.json
+routerwatch.env
 web/admin_token.txt
+web/habitos/.secret
 
 # Banco de finanças (NÃO reconstruível — ver item de backup no backlog)
 finance.db
