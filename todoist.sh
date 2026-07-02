@@ -29,12 +29,36 @@ case "$cmd" in
     curl -s "${auth[@]}" -X POST "$API/tasks" "${args[@]}" \
       | jq -r 'if .id then "OK: \(.content)\(if .due then " — vence \(.due.string)" else "" end)" else "FALHA: \(tostring)" end'
     ;;
-  today|hoje)
+  move-overdue)  # move tarefas atrasadas para hoje; imprime quais foram movidas
+    OVERDUE=$(filter_tasks "overdue" | jq -r '.results[]|select(.due.date < (now|strftime("%Y-%m-%d")))|"\(.id)|\(.content)|\(.due.string)"' 2>/dev/null || true)
+    if [ -z "$OVERDUE" ]; then
+      echo "(nenhuma tarefa atrasada)"
+    else
+      while IFS='|' read -r id content due_str; do
+        [ -z "$id" ] && continue
+        curl -s "${auth[@]}" -X POST "$API/tasks/$id" \
+          --data-urlencode "due_string=today" --data-urlencode "due_lang=pt" > /dev/null
+        echo "movida: $content (era: $due_str)"
+      done <<< "$OVERDUE"
+    fi
+    ;;
+
+  today|hoje)  # move atrasadas primeiro, depois lista o dia
+    MOVED=$(bash "$0" move-overdue 2>/dev/null | grep "^movida:" || true)
+    N=$(echo "$MOVED" | grep -c "^movida:" 2>/dev/null || echo 0)
+    [ "$N" -gt 0 ] && echo "${N} atrasada(s) movida(s) pra hoje" && echo ""
     filter_tasks "today | overdue" \
-      | jq -r 'if (.results|length)==0 then "Nada pra hoje 🎉" else (.results|sort_by(.due.date)[]|"• \(.content)\(if .due then " (\(.due.string))" else "" end) [#\(.id)]") end'
+      | jq -r 'if (.results|length)==0 then "Nada pra hoje." else (.results|sort_by(.due.date)[]|"• \(.content)\(if .due then " (\(.due.string))" else "" end) [#\(.id)]") end'
     ;;
   list)  # list [filtro_todoist]   ex.: "next 7 days", "#Compras", "p1"
-    filter_tasks "${1:-today | overdue}" \
+    FILTRO="${1:-today | overdue}"
+    # move atrasadas apenas quando o filtro inclui hoje/overdue
+    if echo "$FILTRO" | grep -qiE "today|overdue|hoje"; then
+      MOVED=$(bash "$0" move-overdue 2>/dev/null | grep "^movida:" || true)
+      N=$(echo "$MOVED" | grep -c "^movida:" 2>/dev/null || echo 0)
+      [ "$N" -gt 0 ] && echo "${N} atrasada(s) movida(s) pra hoje" && echo ""
+    fi
+    filter_tasks "$FILTRO" \
       | jq -r 'if (.results|length)==0 then "(vazio)" else (.results[]|"• \(.content) [#\(.id)]") end'
     ;;
   done|concluir)  # done <texto|#id>

@@ -169,10 +169,64 @@ check_new_devices(){ # alerta o admin quando um MAC NOVO aparece na rede (a cada
   now=$(date +%s); last=$(cat "$STATE/newdev_last" 2>/dev/null || echo 0)
   [ $((now - last)) -lt 300 ] && return
   echo "$now" > "$STATE/newdev_last"
+
+  # Donos cujos dispositivos NÃO geram alertas (ex.: iOS com rotação de MAC)
+  local MONITOR_EXCLUDE_OWNERS=("Gabi" "Ana")
+
+  # Rodar ARP scan uma vez e salvar em arquivo temporário
+  local ARP_TMP; ARP_TMP=$(mktemp)
+  arp-scan --interface="$NDEV_IFACE" --localnet --quiet --plain 2>/dev/null > "$ARP_TMP" || true
+
+  # Verificar se algum dono excluído está em casa (MAC conhecido online)
+  local EXCLUDE_HOME=0
+  local excl_macs_list online_macs_list
+  excl_macs_list=$(curl -s "http://127.0.0.1:8080/api/devices" 2>/dev/null \
+    | python3 -c "
+import sys,json
+owners=['Gabi','Ana']
+try:
+  devs=json.load(sys.stdin).get('devices',[])
+  for d in devs:
+    if d.get('owner') in owners and d.get('mac'):
+      print(d['mac'].lower())
+except: pass
+" 2>/dev/null || true)
+  if [ -n "$excl_macs_list" ]; then
+    online_macs_list=$(awk -F'\t' 'NF>=2{print tolower($2)}' "$ARP_TMP")
+    while IFS= read -r emac; do
+      printf '%s\n' "$online_macs_list" | grep -qx "$emac" && EXCLUDE_HOME=1 && break
+    done <<< "$excl_macs_list"
+  fi
+
   while IFS=$'\t' read -r ip mac vendor; do
     mac=$(printf '%s' "$mac" | tr 'A-Z' 'a-z'); [ -z "$mac" ] && continue
     grep -qx "$mac" "$SEEN" && continue
     echo "$mac" >> "$SEEN"
+
+    # Suprime alerta se o IP já pertence a um dispositivo trusted no catálogo
+    # (evita falsos positivos por rotação de MAC ou troca de dock/adaptador)
+    if [ -n "$ip" ]; then
+      trusted_name=$(curl -s "http://127.0.0.1:8080/api/devices" 2>/dev/null \
+        | python3 -c "
+import sys,json
+try:
+  devs=json.load(sys.stdin).get('devices',[])
+  match=[d for d in devs if d.get('ip')=='$ip' and d.get('trusted') and d.get('name')]
+  print(match[0]['name'] if match else '')
+except: print('')
+" 2>/dev/null || true)
+      if [ -n "$trusted_name" ]; then
+        continue
+      fi
+    fi
+
+    # Suprime MAC privado/aleatório (bit locally-administered) se dono excluído está em casa
+    # Cobre rotação de MAC do iOS quando Ana ou Gabi estão na rede
+    local first_oct; first_oct=$(printf '%d' "0x${mac%%:*}" 2>/dev/null || echo 0)
+    if [ $(( first_oct & 2 )) -ne 0 ] && [ "$EXCLUDE_HOME" -eq 1 ]; then
+      continue
+    fi
+
     [ -z "$vendor" ] && vendor="(fabricante desconhecido)"
     tg "$TELEGRAM_CHAT_ID" "🚨 Novo dispositivo na rede!
 IP: $ip · MAC: $mac
@@ -182,7 +236,8 @@ Me diz o que é que eu catalogo. Ex.:
 • \"é o celular do João, visitante\"
 • \"é a TV nova da sala\"
 • \"investiga o $ip\" (eu descubro sozinho)"
-  done < <(arp-scan --interface="$NDEV_IFACE" --localnet --quiet --plain 2>/dev/null)
+  done < "$ARP_TMP"
+  rm -f "$ARP_TMP"
 }
 
 REMIND_F="$DIR/reminders.json"
@@ -240,7 +295,7 @@ process_screen_nudges(){ # nudge de bem-estar p/ as filhas (uso contínuo), na p
   last=$(cat "$STATE/nudge_last" 2>/dev/null || echo 0)
   [ $((now - last)) -lt 1200 ] && return                   # checa no máx a cada 20 min
   echo "$now" > "$STATE/nudge_last"
-  for p in Gabi Ana Rodrigo; do
+  for p in Rodrigo; do
     cf="$STATE/nudge_$p"; today=$(date +%Y%m%d)
     plast=$(sed -n 1p "$cf" 2>/dev/null || echo 0)
     pday=$(sed -n 2p "$cf" 2>/dev/null || echo "")
@@ -326,6 +381,7 @@ while true; do
     from=$(echo "$upd" | jq -r '.message.from.id // empty')
     chat=$(echo "$upd" | jq -r '.message.chat.id // empty')
     text=$(echo "$upd" | jq -r '.message.text // empty')
+    reply_to=$(echo "$upd" | jq -r '.message.reply_to_message.text // empty')
     doc_id=$(echo "$upd" | jq -r '.message.document.file_id // empty')
     doc_name=$(echo "$upd" | jq -r '.message.document.file_name // "documento"')
     photo_id=$(echo "$upd" | jq -r '.message.photo[-1].file_id // empty')
@@ -411,6 +467,10 @@ while true; do
       /modelo|/model) tg "$chat" "🧠 Modelo atual: $(get_model). Troque com /opus, /sonnet ou /haiku. Para uma pergunta só, use prefixo — ex.: opus: analise a fundo o dispositivo .104"; continue;;
       /start|/help) tg "$chat" "Sou o PIrrai (agente total no Pi). Pergunte ou peça ações (status, rede, Pi-hole, serviços...). 📷 Envie foto/print → analiso o conteúdo. 🖨️ Para imprimir, diga 'imprimir' na legenda (ex.: 'imprimir p. 1-3'). 🧠 Modelo: $(get_model) — /opus mais raciocínio, /sonnet padrão, ou prefixo 'opus:' numa pergunta. /reset limpa o contexto."; continue;;
     esac
+    # injeta contexto de reply (mensagem respondida) no texto
+    if [ -n "$reply_to" ]; then
+      text="[Respondendo a: \"${reply_to:0:200}\"] $text"
+    fi
     # resolve modelo: padrão (arquivo) ou override por prefixo "opus:/sonnet:/haiku:"
     USEMODEL=$(get_model)
     pfx="${text%%:*}"
@@ -443,6 +503,13 @@ TODOIST (tarefas e lista de compras do Rodrigo; ferramenta /home/rodrigor/homewa
 - Tarefas de hoje: todoist.sh today. Listar c/ filtro Todoist: todoist.sh list "next 7 days". Ver compras: todoist.sh list "#Compras".
 - Concluir: todoist.sh done "texto-da-tarefa" (ou done #id). Projetos: todoist.sh projects.
 Confirme curtinho o que anotou/concluiu, citando o vencimento se houver. Diferenca p/ LEMBRETES: Todoist = lista de afazeres persistente do Rodrigo; reminder_add.sh = alerta pontual no Telegram por hora/chegada (e o unico jeito de avisar filhas/esposa).
+AGENDA (compromissos do Rodrigo; ferramenta /home/rodrigor/homewatch/agenda.sh; LEITURA da agenda do Google Calendar pessoal + tarefas com hora do Todoist, fuso Recife): use quando ele perguntar dos compromissos/agenda ou quando precisar achar horario livre.
+- O que tenho hoje: agenda.sh today. Proximos dias: agenda.sh week [N] (padrao 7). Ambos ja juntam eventos do calendario + tarefas do Todoist que tem hora.
+- Achar horario livre: agenda.sh free <minutos> [dias] [hora_ini] [hora_fim] (padrao 7 dias, 6h-22h). Considera OCUPADO os eventos do calendario E as tarefas Todoist com hora. Ex.: "quando tenho 40min livres essa semana?" -> agenda.sh free 40.
+- CRIAR evento no Google Calendar (reuniao, compromisso com hora, com ou sem convidados): agenda.sh new "<titulo>" "<inicio>" ["<fim>"] [--local X] [--desc Y] [--convida a@x,b@y]. Datas em pt valem (ex.: "amanha 14h", "20/06 9h30"); sem fim dura 1h; com --convida o Google manda o convite. Ex.: marca reuniao com o Joao sexta 14h as 15h -> agenda.sh new "Reuniao Joao" "sexta 14h" "sexta 15h" --convida joao@x.com. Devolve o id do evento.
+- EDITAR/CANCELAR evento do Google: agenda.sh edit <id> [--titulo|--inicio|--fim|--local|--desc|--convida ...] ; agenda.sh cancel <id> (notifica convidados). O id aparece como [#id] na saida do today/week -- liste primeiro pra achar o id.
+- GOOGLE CALENDAR x TODOIST: use o Google Calendar (agenda.sh new) p/ COMPROMISSOS com hora marcada (reuniao, medico, aula), especialmente com convidados. Use Todoist (todoist.sh add) p/ AFAZERES/lembretes pessoais com prazo. "Marca/agenda um horario pra mim" sem ser afazer = Google Calendar.
+- Coach de habito context-aware: ao lembrar do exercicio, rode agenda.sh free 40 1 e sugira um horario que caiba no dia (manha ou fim de tarde), fugindo dos compromissos; se ele topar, pode criar como tarefa no Todoist (todoist.sh add) ou evento no Google (agenda.sh new), conforme ele preferir.
 FINANÇAS (controle de gastos do Rodrigo; ferramenta /home/rodrigor/homewatch/finance.sh; o Rodrigo fala valores em reais):
 - Lançar gasto: quando ele disser que gastou/pagou algo, rode SOURCE=telegram finance.sh add <valor> "descricao" — a categoria sai automatica. Ex.: gastei 45 no almoco -> SOURCE=telegram finance.sh add 45 "almoco do trabalho"; paguei 320 no mercado -> SOURCE=telegram finance.sh add 320 "mercado". Se ele citar a categoria, passe como 3o argumento.
 - Receita (salario, entrada, pix recebido): acrescente --receita no fim. Ex.: recebi 5000 de salario -> SOURCE=telegram finance.sh add 5000 "salario" "" "" "" --receita.
