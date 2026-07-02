@@ -46,7 +46,7 @@
       "description": "Conectar PIrrai ao Google Calendar via OAuth 2.0 (ou CalDAV como alternativa mais simples). Fluxo OAuth feito uma vez; refresh token salvo em config. Operações: ver eventos do dia/semana ('o que tenho hoje?'), criar evento ('cria reunião sexta às 14h'), lembrete de evento próximo via Telegram. Avaliar OAuth 2.0 vs CalDAV na hora de implementar.",
       "status": "backlog",
       "created": "2026-06-10",
-      "notes": ""
+      "notes": "Caso de uso prioritário: lembrete de hábitos context-aware. Ao invés de cue_time fixo, habit_remind.sh consultará o calendário do dia para encontrar um slot livre pela manhã ou fim de tarde. Nos dias com aula matinal (visível no calendário), sugerir o slot de tarde. Rodrigo vai compartilhar acesso ao calendário para isso."
     },
     {
       "id": "1781197317",
@@ -142,6 +142,14 @@
       "description": "Cron diário que faz backup do finance.db PARA FORA do Pi (cartão SD morre). Opções: sqlite3 .backup + envio para o e-mail compras@ (SMTP já configurado), rclone para nuvem, ou push criptografado para repo privado. Manter últimos 30 diários + 12 mensais. Testar restauração. Diferente do devices.db (rebuild via Pi-hole), o finance.db NÃO é reconstruível — backup é pré-requisito antes de acumular dados, por isso F1.",
       "status": "concluido",
       "created": "2026-06-11",
+      "notes": ""
+    },
+    {
+      "id": "1781233777",
+      "title": "Categorização inteligente de e-mails Amazon",
+      "description": "Ao receber e-mail de confirmação de pedido Amazon (compras@mail.rodrigor.com), extrair os itens comprados via Claude (haiku, schema rígido) e categorizar pelo tipo de produto: produtos de limpeza/casa/higiene → categoria 'Casa' ou 'Mercado' (N2); eletrônicos/livros/roupas/misc → 'Compras diversas' ou 'Gastronomia' etc. (N3). Mesmo princípio se aplica ao iFood: merchant de pizzaria/sushi/açaí → Gastronomia (N3); restaurante cotidiano → Refeições (N2). Pré-requisito: F2 (IMAP) já está pronto. Implementar parser Amazon + lógica de nível por produto.",
+      "status": "backlog",
+      "created": "2026-06-12",
       "notes": ""
     }
   ]
