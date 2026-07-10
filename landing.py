@@ -12,6 +12,7 @@ SERVICES = [
     ("🌐", "Pi-hole", "Bloqueio de anúncios e painel de DNS da casa", f"http://{HOST}/admin", "#c62828"),
     ("🖥️", "Dispositivos", "Inventário da rede — quem está conectado", f"http://{HOST}:8080", "#2f81f7"),
     ("📶", "Omada", "Controlador da rede Wi-Fi (TP-Link)", f"http://{HOST}:8088", "#00838f"),
+    ("📡", "Routerwatch", "Monitoramento do roteador ER605 (Grafana)", "http://100.125.219.122:3000/d/routerwatch/roteador-e28094-er605-dual-wan", "#f46800"),
 ]
 
 PAGE = """<!doctype html><html lang=pt-br><head><meta charset=utf-8>
