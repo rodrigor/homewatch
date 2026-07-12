@@ -1,0 +1,24 @@
+{
+  "movies": [
+    {
+      "id": 1,
+      "name": "Dune: Part Three (Dune Messiah)",
+      "franchise": "Dune",
+      "watched_prior": "Dune (2021) e Dune: Part Two (2024) ja assistidos",
+      "release_date": "2026-12-18",
+      "status": "aguardando",
+      "watch_updates": true,
+      "notes": "Estreia confirmada 18/12/2026 (Warner Bros/IMAX). Ha rumor (jul/2026) de possivel mudanca de data por conflito com Avengers: Doomsday."
+    },
+    {
+      "id": 2,
+      "name": "Avengers: Doomsday",
+      "franchise": "MCU",
+      "watched_prior": "",
+      "release_date": "2026-12-18",
+      "status": "aguardando",
+      "watch_updates": true,
+      "notes": "MESMA data de estreia que Dune: Part Three (18/12/2026) - conflito direto. Ja foi adiada 2x antes (originalmente mai/2025, depois mai/2026). Provavel que uma das duas mude de data."
+    }
+  ]
+}

@@ -33,13 +33,21 @@ Recibos da Apple Store (@mac.com) não caem em nenhuma dessas — não há encam
 ## Empresas — nome correto "Phoebus"
 O nome da empresa/projeto é <b>Phoebus</b>, não "Fibus". Em transcrições de áudio é comum aparecer como "Fibus" (é assim que soa "Phoebus" falado) — sempre corrigir para "Phoebus" ao interpretar transcrições.
 
-## Projeto Centelha — Telescope
-Rodrigo participa do <b>Programa Centelha Paraíba</b> como integrante da equipe (incluído por Herbert Rocha Monteiro) da ideia:
-<b>"Telescope: gestão de PMEs com grafo organizacional e IA"</b>.
-Link da ideia: http://pb.programacentelha.com.br/es1/ideia/telescope-gestao-de-pmes-com-grafo-organizacional-e-ia
-Cronograma e resultados oficiais (fases, datas, seleção): https://materiais.programacentelha.com.br/pb
-IMPORTANTE: o cronograma do Centelha PODE MUDAR — nunca assumir uma data baixada/lida anteriormente como definitiva; ao ser perguntado sobre prazos/fases/resultados, sempre reconsultar a página https://materiais.programacentelha.com.br/pb (ou buscar e-mails recentes de pb@programacentelha.com.br) em vez de confiar em informação antiga já registrada.
-Histórico conhecido (via e-mail, rodrigor@dcx.ufpb.br):
-- 24/05/2026: Herbert compartilhou rascunho "Centelha PB - Ideia Inovadora" (Google Drive)
-- 25/05/2026: Rodrigo incluído na equipe da ideia Telescope + e-mail de boas-vindas ao programa
-- Status mais recente conhecido (a partir de e-mail): "ideia submetida / equipe confirmada", sem confirmação de avanço de fase ainda.
+## Projeto Centelha — Telescope (projeto da UANÁ, não pessoal do Rodrigo)
+O Centelha é um projeto da <b>UANÁ TECNOLOGIA DA INFORMAÇÃO LTDA</b> (empresa do Rodrigo/Herbert/Lucas/Rony), não uma iniciativa pessoal dele. Produto submetido: <b>Telescope</b> (plataforma de gestão de OKRs, spinoff do laboratório AYTY/UFPB — https://tlscope.io), no Edital FAPESQ nº 022/2026 (Centelha 3 PB).
+Rodrigo participa como <b>membro colaborador</b> (sócio investidor + Prof. UFPB) — proponente/coordenador é <b>Herbert Rocha Monteiro</b>.
+FONTE DE VERDADE (mais completa que e-mail): nota <code>uana/01-projetos/Centelha/Centelha.md</code> no vault (vault.sh cat uana/01-projetos/Centelha/Centelha.md) — tem cronograma, checklist por fase, enquadramento, pendências. Ver também `uana/01-projetos/Telescope/` para material do produto/pitch.
+Página pública de cronograma/resultados: https://materiais.programacentelha.com.br/pb
+IMPORTANTE: o cronograma PODE MUDAR — nunca assumir uma data antiga como definitiva; ao ser perguntado sobre prazos/fases/resultados, reconsultar a nota do vault (rodar `vault.sh update` antes se achar que pode estar desatualizada) e/ou a página pública e/ou buscar e-mails recentes de pb@programacentelha.com.br / centelhapb@fapesq.rpp.br.
+Cronograma conhecido (pode ter mudado — confirmar antes de informar como certo):
+- Fim submissão Fase 1: 25/05/2026 (concluído)
+- Resultado preliminar Fase 1: 22/06/2026
+- Resultado final Fase 1: 15/07/2026
+- Submissão Fase 2: 20/07–10/08/2026
+- Resultado preliminar Fase 2: 08/09/2026
+- Resultado final Fase 2: 02/10/2026
+
+## Séries — otimização de assinatura de streaming (regra permanente)
+Rodrigo quer manter, por streaming, o plano SEM propaganda só enquanto houver ao menos 1 série "ativa" (com episódio novo saindo/recém-saído); se nenhuma série do streaming estiver ativa, ele assina o plano BÁSICO com propaganda. Fonte: series.json (campo tvmaze_id de cada série, checar próximo episódio via TVmaze).
+Regra de "ativa": tem episódio que já saiu recentemente ou tem próximo episódio agendado em breve (poucas semanas) — ou seja, temporada em exibição agora. Série "parada" (aguardando renovação/nova temporada sem data próxima) NÃO conta como ativa.
+Sempre que o status de alguma série mudar (temporada atual termina = fica parada; ou nova temporada é anunciada/estreia = fica ativa), reavaliar o agrupamento por streaming e avisar o Rodrigo se a recomendação mudar (downgrade pra básico c/ propaganda ou upgrade pra sem propaganda). Já existem lembretes criados (reminder_add.sh) para os retornos previstos de Marshals (Paramount+, 04/10/2026) e O Senhor dos Anéis: Os Anéis do Poder (Prime Video, 11/11/2026) — avisar antes da estreia pra ele voltar a tempo pro plano sem propaganda.

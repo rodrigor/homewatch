@@ -5,22 +5,24 @@
       "name": "Landman",
       "status": "assistindo",
       "platform": "Paramount+",
-      "notes": "",
+      "notes": "Renovada p/ T3 (confirmado 05/12/2025), sem data oficial. Estimativa: novembro/2026 (pode escorregar p/ inicio 2027 - filmagem prevista p/ final de agosto/2026).",
       "added": "2026-06-10",
-      "last_episode": "",
-      "notify_new": false,
-      "tvmaze_id": 0
+      "last_episode": "S02E10",
+      "notify_new": true,
+      "tvmaze_id": 53777,
+      "watch_renewal": true
     },
     {
       "id": 2,
       "name": "Stick",
       "status": "assistindo",
       "platform": "Apple TV+",
-      "notes": "",
+      "notes": "Renovada p/ T2 (confirmado jul/2025), filmagem ja terminada, em pos-producao. Sem data oficial; expectativa 2026 (provavel fall/outono 2026).",
       "added": "2026-06-10",
       "last_episode": "S01E10",
       "notify_new": true,
-      "tvmaze_id": 82227
+      "tvmaze_id": 82227,
+      "watch_renewal": true
     },
     {
       "id": 3,
@@ -82,11 +84,12 @@
       "name": "Rancho Dutton",
       "status": "assistindo",
       "platform": "Paramount+",
-      "notes": "",
+      "notes": "Renovada p/ T2 (confirmado jun/2026, apos recorde de audiencia da T1). Sem data oficial; producoes de Taylor Sheridan levam 8-12 meses, estimativa meados/final de 2027.",
       "added": "2026-06-10",
       "last_episode": "S01E09",
       "notify_new": true,
-      "tvmaze_id": 84539
+      "tvmaze_id": 84539,
+      "watch_renewal": true
     },
     {
       "id": 9,
@@ -104,11 +107,11 @@
       "name": "Marshals",
       "status": "assistindo",
       "platform": "Paramount+",
-      "notes": "",
+      "notes": "Ja renovada e com T2 agendada: S02E01 previsto p/ 04/10/2026 (notify_new normal vai avisar quando sair).",
       "added": "2026-06-10",
-      "last_episode": "",
-      "notify_new": false,
-      "tvmaze_id": 0
+      "last_episode": "S01E13",
+      "notify_new": true,
+      "tvmaze_id": 84526
     },
     {
       "id": 11,
@@ -128,7 +131,7 @@
       "platform": "Apple TV+",
       "notes": "",
       "added": "2026-07-04",
-      "last_episode": "S03E01",
+      "last_episode": "S03E02",
       "notify_new": true,
       "tvmaze_id": 38052
     },
@@ -141,7 +144,31 @@
       "added": "2026-07-06",
       "last_episode": "S01E09",
       "notify_new": true,
-      "tvmaze_id": 86175
+      "tvmaze_id": 86175,
+      "watch_renewal": true
+    },
+    {
+      "id": 14,
+      "name": "O Senhor dos Anéis: Os Anéis do Poder",
+      "status": "assistindo",
+      "platform": "Prime Video",
+      "notes": "T3 ja confirmada e agendada: S03E01 previsto p/ 11/11/2026 (notify_new normal vai avisar quando sair, sem precisar de watch_renewal).",
+      "added": "2026-07-10",
+      "last_episode": "S02E08",
+      "notify_new": true,
+      "tvmaze_id": 33352
+    },
+    {
+      "id": 15,
+      "name": "Dune: Prophecy",
+      "status": "quero ver",
+      "platform": "Max",
+      "notes": "Spinoff/prequel de Dune (10 mil anos antes de Dune: Part Two). T1 com 6 eps, ultimo em 22/12/2024. T2 anunciada, sem data agendada na TVmaze ainda (materias recentes de jun/2026 falam em estreia 'aguardada' se aproximando).",
+      "added": "2026-07-10",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 42846,
+      "watch_renewal": true
     }
   ]
 }
