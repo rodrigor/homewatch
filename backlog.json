@@ -124,9 +124,9 @@
       "id": "1781197326",
       "title": "[FINANÇAS F5] Parcelamentos",
       "description": "Ao lançar compra parcelada: informar valor total, nº parcelas, conta, data da primeira parcela. Sistema cria N transações futuras automaticamente (status=agendado). Página /parcelamentos: lista de compras parceladas em aberto com progresso (parcela 3 de 12). Widget no dashboard: 'compromissos futuros' — soma das parcelas dos próximos 3 meses por conta. Edição/cancelamento de parcelamento (cancela parcelas futuras).",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "IMPLEMENTADO 2026-07-13 (opção B): parcelas vivem só na tabela installments (NÃO viram transações agendadas — evita corromper saldo/relatórios, que não filtram status). Projetadas a partir de start_date+n_total; parcela conta como 'paga' quando o vencimento passou; cobrança real entra pelo OFX. Página /parcelamentos (form de criação + lista com progresso 'parcela X de N' + próxima + restante + cancelar). Widget 'Compromissos futuros' no dashboard (próximos 3 meses por conta). bp_parcelamentos.py + migração installments-extra (category/favorecido/tx_type/cancelled/created_at). 45/45 testes ok."
     },
     {
       "id": "1781197327",
@@ -159,6 +159,14 @@
       "status": "concluido",
       "created": "2026-07-12",
       "notes": "Implementado 2026-07-12: coluna transactions.nivel (override), seletor no componente, dashboard/modal/filtro usam COALESCE(t.nivel, cat.nivel, ...)."
+    },
+    {
+      "id": "1783907507",
+      "title": "Regras de classificação com nível (N) por padrão",
+      "description": "rules.py/finance_rules.py ainda não aplicam 'nivel' automaticamente (só categoria). Adicionar coluna 'nivel' na tabela rules e usar em apply_rules() para setar transactions.nivel quando a regra bater. Caso de uso: 'Outback sempre é Refeições N3' deveria aplicar sozinho via regra, sem precisar de UPDATE manual toda vez.",
+      "status": "backlog",
+      "created": "2026-07-12",
+      "notes": ""
     }
   ]
 }

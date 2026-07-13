@@ -4,6 +4,7 @@ from flask import Blueprint, request, render_template
 
 from core import (db, login_required, NOTRANSFER, STATUSES, STATUS_GLYPH,
                   SRC_ICONS, SRC_ICONS_LABELS, tot_by_currency, val_label_for)
+from bp_parcelamentos import future_commitments
 
 bp = Blueprint("dash", __name__)
 
@@ -77,6 +78,10 @@ def financas():
             "sal": _msum(mo, "category='Salário'"),
             "rec": _msum(mo, f"amount>0 AND NOT ({TRX})")})
     acolor = {a["id"]: (a["color"] or "#888") for a in c.execute("SELECT id,color FROM accounts").fetchall()}
+    # --- compromissos futuros (parcelas) — próximos 3 meses, por conta ---
+    _pc, fut_total = future_commitments(c, 3)
+    _anames = {a["id"]: a["name"] for a in c.execute("SELECT id,name FROM accounts").fetchall()}
+    fut_conta = [(_anames.get(k, "—"), v) for k, v in sorted(_pc.items())]
     c.close()
     NIV_LABEL = {1: "N1 · Comprometido", 2: "N2 · Necessário variável", 3: "N3 · Discricionário", 0: "N0 · Sem nível"}
     NIV_COLOR = {1: "#2f81f7", 2: "#3fb950", 3: "#ef6c00", 0: "#6e7681"}
@@ -112,7 +117,8 @@ def financas():
     return render_template("financas.html", mes=mes, desp=desp, exc=exc, rec=rec, n=n, pend=pend,
                            grupos=grupos, niv_detail=niv_detail, orc=orc, maxg=maxg, totg=totg, meses=meses,
                            n1=n1, n2=n2, n3=n3, n0=n0, obrigatorio=obrigatorio, salario_base=salario_base,
-                           acolor=acolor, pessoas=pessoas, orcserie_json=json.dumps(orcserie))
+                           acolor=acolor, pessoas=pessoas, orcserie_json=json.dumps(orcserie),
+                           fut_total=fut_total, fut_conta=fut_conta)
 
 
 # ---------- transações de um recorte (modal do Resumo) ----------

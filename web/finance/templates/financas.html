@@ -8,6 +8,12 @@
 <div class="card kpi"><div class=l>Receitas</div><div class="v pos">{{rec|brl}}</div></div>
 <div class="card kpi"><div class=l>Saldo</div><div class="v">{{(rec-desp)|brl}}</div></div>
 <div class="card kpi"><div class=l>Transações</div><div class=v>{{n}}</div><div class=tag>{{pend}} pendente(s)</div></div></div>
+{% if fut_total %}<div class=card style=margin-bottom:18px><div style="display:flex;align-items:center;margin-bottom:6px">
+  <h3 style="margin:0;flex:1">📅 Compromissos futuros (parcelas)</h3>
+  <a class=tag href="{{url_for('parc.parcelamentos')}}">ver parcelamentos →</a></div>
+  <div>Próximos 3 meses: <b>{{ fut_total|abs|brl }}</b>
+  <span class=muted style=font-size:12px>&nbsp;·&nbsp;{% for nome,v in fut_conta %}{{nome}}: {{ v|abs|brl }}{{ ' · ' if not loop.last }}{% endfor %}</span></div>
+</div>{% endif %}
 {% if meses %}<div class=card><h3 style=margin-top:0>Despesas e receitas mês a mês</h3>
 <div class=mchart>
   {% for m in meses %}<div class="mcol{{' on' if m.atual}}">

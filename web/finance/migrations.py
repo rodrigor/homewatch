@@ -73,6 +73,15 @@ def m_tx_recurrence(con):
         con.execute("ALTER TABLE transactions ADD COLUMN recurrence TEXT")
 
 
+def m_installments_extra(con):
+    cols = _cols(con, "installments")  # parcelamentos: metadados p/ a página /parcelamentos
+    if not cols: return
+    for cn, ct in (("category", "TEXT"), ("favorecido", "TEXT"),
+                   ("tx_type", "TEXT"), ("cancelled", "INTEGER DEFAULT 0"),
+                   ("created_at", "TEXT")):
+        if cn not in cols: con.execute(f"ALTER TABLE installments ADD COLUMN {cn} {ct}")
+
+
 MIGRATIONS = [
     ("accounts-titular", m_accounts_titular),
     ("tx-split-group", m_tx_split_group),
@@ -83,6 +92,7 @@ MIGRATIONS = [
     ("tx-transfer-group", m_tx_transfer_group),
     ("tx-recurrence", m_tx_recurrence),
     ("tx-nivel", m_tx_nivel),
+    ("installments-extra", m_installments_extra),
 ]
 
 

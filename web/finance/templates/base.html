@@ -8,7 +8,7 @@
 </head><body>
 {% if session.user %}<header><b>💰 Finanças</b>
 <nav><a href="https://pirrai.tail414b9b.ts.net/" title="serviços do PIrrai">🏠</a><a href="{{url_for('dash.financas')}}">Resumo</a><a href="{{url_for('tx.transacoes')}}">Transações</a><a href="{{url_for('fav.favorecidos')}}">Favorecidos</a>
-<a href="{{url_for('regras.grupos')}}">Grupos</a><a href="{{url_for('contas.contas')}}">Contas</a><a href="{{url_for('contas.transferencia')}}">↔ Transferência</a><a href="{{url_for('contas.investimentos')}}">📈 Invest.</a><a href="{{url_for('regras.regras')}}">Regras</a><a href="{{url_for('regras.limites')}}">Limites</a><a href="{{url_for('regras.conciliacao')}}">Conciliar</a><a href="{{url_for('auth.senha')}}">Senha</a>
+<a href="{{url_for('regras.grupos')}}">Grupos</a><a href="{{url_for('contas.contas')}}">Contas</a><a href="{{url_for('contas.transferencia')}}">↔ Transferência</a><a href="{{url_for('contas.investimentos')}}">📈 Invest.</a><a href="{{url_for('parc.parcelamentos')}}">Parcelas</a><a href="{{url_for('regras.regras')}}">Regras</a><a href="{{url_for('regras.limites')}}">Limites</a><a href="{{url_for('regras.conciliacao')}}">Conciliar</a><a href="{{url_for('auth.senha')}}">Senha</a>
 <button id=themebtn class=themebtn onclick="toggleTheme()" title="tema claro/escuro">🌙</button>
 <span class=muted>{{session.user}}</span><a href="{{url_for('auth.logout')}}">sair</a></nav></header>{% endif %}
 <div class=wrap>

@@ -125,7 +125,7 @@ def create_app():
     migrations.migrate(con)
     con.close()
 
-    import bp_auth, bp_dashboard, bp_transacoes, bp_favorecidos, bp_contas, bp_regras
-    for m in (bp_auth, bp_dashboard, bp_transacoes, bp_favorecidos, bp_contas, bp_regras):
+    import bp_auth, bp_dashboard, bp_transacoes, bp_favorecidos, bp_contas, bp_regras, bp_parcelamentos
+    for m in (bp_auth, bp_dashboard, bp_transacoes, bp_favorecidos, bp_contas, bp_regras, bp_parcelamentos):
         app.register_blueprint(m.bp)
     return app
