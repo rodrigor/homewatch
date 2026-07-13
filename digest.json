@@ -1,0 +1,16 @@
+{
+  "assunto": "IA & Tech",
+  "destinatario": "",
+  "modelo": "sonnet",
+  "horas": 48,
+  "max_por_fonte": 10,
+  "max_selecionadas": 12,
+  "fontes": [
+    {"nome": "Hacker News (100+ pts)", "url": "https://hnrss.org/newest?points=100"},
+    {"nome": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
+    {"nome": "TechCrunch AI", "url": "https://techcrunch.com/category/artificial-intelligence/feed/"},
+    {"nome": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/technology-lab"},
+    {"nome": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+    {"nome": "MIT Tech Review — IA", "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed"}
+  ]
+}

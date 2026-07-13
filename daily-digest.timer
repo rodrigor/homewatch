@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Digest as 05:00
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+AccuracySec=10min
+
+[Install]
+WantedBy=timers.target

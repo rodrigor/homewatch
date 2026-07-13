@@ -1,0 +1,12 @@
+[Unit]
+Description=PIrrai - Daily Digest (RSS IA/tech curado por e-mail)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/homewatch
+ExecStart=/home/rodrigor/homewatch/digest.py
