@@ -27,7 +27,7 @@ def transacoes():
     if f_cat == "__sem__":
         where.append("(t.category IS NULL OR t.category='')")
     elif f_cat in ("n0", "n1", "n2", "n3"):
-        where.append("t.category IN (SELECT name FROM categories WHERE COALESCE(nivel,0)=?)"); params.append(int(f_cat[1]))
+        where.append("COALESCE(t.nivel, (SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)=?"); params.append(int(f_cat[1]))
     elif f_cat:
         where.append("COALESCE(t.category,'')=?"); params.append(f_cat)
     if f_status: where.append("t.status=?"); params.append(f_status)
@@ -52,10 +52,12 @@ def transacoes():
 @login_required
 def api_tx(tid):
     field = request.form.get("field"); value = request.form.get("value", "")
-    if field not in {"date", "datetime", "description", "merchant", "favorecido", "category", "status", "account_id", "amount", "excepcional"}:
+    if field not in {"date", "datetime", "description", "merchant", "favorecido", "category", "status", "account_id", "amount", "excepcional", "nivel"}:
         return {"ok": False, "err": "campo inválido"}, 400
     c = db()
-    if field == "amount":
+    if field == "nivel":   # override de essencialidade por lançamento; '' = auto (herda da categoria)
+        c.execute("UPDATE transactions SET nivel=? WHERE id=?", (int(value) if value in ("0", "1", "2", "3") else None, tid))
+    elif field == "amount":
         cents = parse_cents(value)
         if cents is None: c.close(); return {"ok": False, "err": "valor inválido"}, 400
         c.execute("UPDATE transactions SET amount=? WHERE id=?", (cents, tid))

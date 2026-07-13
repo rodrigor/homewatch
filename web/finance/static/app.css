@@ -53,6 +53,10 @@ tr.editing td{background:#2f81f714}tr.newrow{background:#2f81f714}tr.st-pendente
 .txtbl tr.drow:not(.editing) input,.txtbl tr.drow:not(.editing) select{pointer-events:none}
 .txtbl tr.drow:not(.editing) [data-k=cat] select{-webkit-appearance:none;-moz-appearance:none;appearance:none;text-indent:0}
 .txtbl tr.editing .edt{color:var(--acc)}
+.txtbl .catcell{display:flex;gap:4px;align-items:center}
+.txtbl .catcell>select:first-child{flex:1;min-width:0}
+.txtbl .nivsel{flex:0 0 auto;width:60px!important;font-size:11px!important;color:var(--mut)}
+.txtbl .nivsel.set{color:var(--acc);font-weight:700}
 
 /* ---------- split (lançamento composto) ---------- */
 .spmark{color:var(--mut);font-size:13px;padding:3px 5px;cursor:default}

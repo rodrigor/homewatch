@@ -26,6 +26,12 @@ def m_tx_split_group(con):
         con.execute("ALTER TABLE transactions ADD COLUMN split_group INTEGER")
 
 
+def m_tx_nivel(con):
+    cols = _cols(con, "transactions")
+    if cols and "nivel" not in cols:  # override de essencialidade por lançamento (N0-N3); NULL = herda da categoria
+        con.execute("ALTER TABLE transactions ADD COLUMN nivel INTEGER")
+
+
 def m_rules_ranges(con):
     cols = _cols(con, "rules")  # regras por faixa de dias/conta/favorecido
     if not cols: return
@@ -76,6 +82,7 @@ MIGRATIONS = [
     ("tx-iof", m_tx_iof),
     ("tx-transfer-group", m_tx_transfer_group),
     ("tx-recurrence", m_tx_recurrence),
+    ("tx-nivel", m_tx_nivel),
 ]
 
 

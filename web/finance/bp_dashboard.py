@@ -34,31 +34,31 @@ def financas():
         GROUP BY m ORDER BY m DESC LIMIT 12""").fetchall()
     # --- Estrutura de gasto por nível ---
     nivel_rows = c.execute("""
-        SELECT COALESCE(cat.nivel, t.email_hint_nivel, 0) niv, -SUM(t.amount) total
+        SELECT COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0) niv, -SUM(t.amount) total
         FROM transactions t LEFT JOIN categories cat ON cat.name=t.category
         WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
-        GROUP BY COALESCE(cat.nivel, t.email_hint_nivel, 0) ORDER BY niv""", (mes,)).fetchall()
+        GROUP BY COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0) ORDER BY niv""", (mes,)).fetchall()
     nivel_map = {r["niv"]: r["total"] for r in nivel_rows}
     n1 = nivel_map.get(1, 0); n2 = nivel_map.get(2, 0); n3 = nivel_map.get(3, 0); n0 = nivel_map.get(0, 0)
     niv_cat_rows = c.execute("""
-        SELECT COALESCE(cat.nivel, t.email_hint_nivel, 0) niv, COALESCE(NULLIF(t.category,''),'(sem categoria)') cat, -SUM(t.amount) v
+        SELECT COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0) niv, COALESCE(NULLIF(t.category,''),'(sem categoria)') cat, -SUM(t.amount) v
         FROM transactions t LEFT JOIN categories cat ON cat.name=t.category
         WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0 AND COALESCE(t.excepcional,0)=0
-        GROUP BY COALESCE(cat.nivel, t.email_hint_nivel, 0), t.category
-        ORDER BY COALESCE(cat.nivel, t.email_hint_nivel, 0), v DESC""", (mes,)).fetchall()
+        GROUP BY COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0), t.category
+        ORDER BY COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0), v DESC""", (mes,)).fetchall()
     # --- distribuição N1/N2/N3 por pessoa (titular da conta); recorrentes + excepcionais ---
     pessoa_rows = c.execute("""
-        SELECT COALESCE(a.titular,'(sem titular)') pessoa, COALESCE(cat.nivel, t.email_hint_nivel, 0) niv, -SUM(t.amount) v
+        SELECT COALESCE(a.titular,'(sem titular)') pessoa, COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0) niv, -SUM(t.amount) v
         FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id
         LEFT JOIN categories cat ON cat.name=t.category
         WHERE t.amount<0 AND substr(t.date,1,7)=? AND COALESCE(cat.is_transfer,0)=0
-        GROUP BY a.titular, COALESCE(cat.nivel, t.email_hint_nivel, 0)""", (mes,)).fetchall()
+        GROUP BY a.titular, COALESCE(t.nivel, cat.nivel, t.email_hint_nivel, 0)""", (mes,)).fetchall()
     obrigatorio = n1 + n2
     cfg_sal = c.execute("SELECT value FROM config WHERE key='salario_base'").fetchone()
     salario_base = int(cfg_sal[0]) if cfg_sal else 0
     # --- Seção orçamento: teto dos essenciais (N1+N2 vs salários) e resultado, contas no orçamento, 6 meses ---
     BUD = "t.account_id IN (SELECT id FROM accounts WHERE COALESCE(entra_orcamento,1)=1)"
-    NIVX = "COALESCE((SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)"
+    NIVX = "COALESCE(t.nivel, (SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)"
     TRX = "COALESCE(t.category,'') IN (SELECT name FROM categories WHERE is_transfer=1)"
     def _msum(mo, cond):
         return c.execute(f"SELECT COALESCE(SUM(amount),0) FROM transactions t WHERE substr(t.date,1,7)=? AND {BUD} AND {cond}", (mo,)).fetchone()[0] or 0
@@ -132,13 +132,13 @@ def api_cat_tx():
         w = "t.category IN (SELECT name FROM categories WHERE COALESCE(NULLIF(grupo,''),'(sem grupo)')=?)" + despesa
         rows = c.execute(base.format(w=w), (val, mes)).fetchall()
     elif tipo == "nivel":
-        w = "COALESCE((SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)=?" + despesa
+        w = "COALESCE(t.nivel, (SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)=?" + despesa
         rows = c.execute(base.format(w=w), (int(val or 0), mes)).fetchall()
     elif tipo == "pessoanivel":
         # despesas de uma pessoa (titular da conta) num nível — recorrentes + excepcionais (não exclui excepcional)
         pessoa = request.args.get("pessoa", ""); niv = int(val or 0)
         nt = " AND t.amount<0 AND COALESCE(t.category,'') NOT IN (SELECT name FROM categories WHERE is_transfer=1)"
-        nivc = " AND COALESCE((SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)=?"
+        nivc = " AND COALESCE(t.nivel, (SELECT nivel FROM categories WHERE name=t.category), t.email_hint_nivel, 0)=?"
         if pessoa in ("", "(sem titular)"):
             w = "t.account_id IN (SELECT id FROM accounts WHERE titular IS NULL)" + nivc + nt
             rows = c.execute(base.format(w=w), (niv, mes)).fetchall()
