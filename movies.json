@@ -19,6 +19,16 @@
       "status": "aguardando",
       "watch_updates": true,
       "notes": "MESMA data de estreia que Dune: Part Three (18/12/2026) - conflito direto. Ja foi adiada 2x antes (originalmente mai/2025, depois mai/2026). Provavel que uma das duas mude de data."
+    },
+    {
+      "id": 3,
+      "name": "The Batman: Part II",
+      "franchise": "Batman (Matt Reeves / Robert Pattinson)",
+      "watched_prior": "The Batman (2022) - Part I",
+      "release_date": "2027-10-01",
+      "status": "aguardando",
+      "watch_updates": true,
+      "notes": "Sequencia de 'The Batman' (2022), com Robert Pattinson e Colin Farrell (Pinguim). Estreia prevista 01/10/2027 - Colin Farrell nesse filme e um dos motivos que trava a possivel temporada 2 da serie 'The Penguin' (HBO)."
     }
   ]
 }

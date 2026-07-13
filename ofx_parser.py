@@ -97,7 +97,7 @@ def reconcile(con, txns, account=None):
             dup += 1; continue
         cand = con.execute(
             """SELECT id, email_hint_category, email_hint_nivel FROM transactions
-               WHERE amount=? AND source<>'ofx' AND external_id IS NULL
+               WHERE amount=? AND source<>'ofx' AND (external_id IS NULL OR source='email')
                AND ABS(julianday(date)-julianday(?))<=2
                ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1""",
             (t["cents"], t["date"], t["date"])).fetchone()

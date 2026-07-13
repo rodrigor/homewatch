@@ -4,6 +4,7 @@ e lança como PENDENTE para revisão. O corpo do e-mail é DADO não-confiável 
 de usuário; instruções ficam no --system-prompt; sem ferramentas → injeção não executa nada)."""
 import os, re, json, ssl, imaplib, sqlite3, subprocess, shutil, email
 from email.header import decode_header, make_header
+from email.utils import parsedate_to_datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 import ofx_parser, finance_rules
@@ -28,7 +29,14 @@ SYS = (
     'Responda SOMENTE com um JSON (sem texto extra, sem cercas) neste formato exato:\n'
     '{"is_purchase": boolean, "amount": number_em_reais_positivo, '
     '"date": "YYYY-MM-DD" ou null, "merchant": string, "description": string, '
-    '"category_hint": string ou null, "nivel": 2 ou 3 ou null, "installments": inteiro ou null}\n\n'
+    '"category_hint": string ou null, "nivel": 2 ou 3 ou null, "installments": inteiro ou null, '
+    '"scheduled": boolean}\n\n'
+    'ATENÇÃO — e-mails do Nubank do tipo "Conta da [EMPRESA] cadastrada em Débito Automático chegou" '
+    'avisam sobre uma cobrança que AINDA VAI ACONTECER (débito automático agendado), não uma compra já '
+    'concluída. Nesse caso: is_purchase=true, "date" = a DATA DE VENCIMENTO informada no e-mail (não a '
+    'data de hoje/recebimento do e-mail), "merchant" = nome da empresa (ex.: "Claro Móvel"), '
+    '"description" = "Débito automático: <empresa>", "scheduled" = true. '
+    'Para qualquer outro e-mail de compra normal, "scheduled" = false.\n\n'
     'Regras para "description": descrição CURTA e LEGÍVEL do produto/serviço (máx. 60 chars). '
     'NÃO use o assunto do e-mail. Resuma o que foi comprado. '
     'Ex.: "Travesseiro de viagem ergonômico em U (3 un.)", "Pizza calabresa + refrigerante", "Assinatura Prime Video".\n\n'
@@ -44,7 +52,9 @@ SYS = (
     'Exemplos: iFood com pizza → category_hint="Gastronomia", nivel=3; '
     'farmácia com remédio → category_hint="Farmácia", nivel=2; '
     'Amazon com livro técnico → category_hint="Educação", nivel=2; '
-    'Amazon com fone de ouvido → category_hint="Eletrônicos", nivel=3.\n\n'
+    'Amazon com fone de ouvido → category_hint="Eletrônicos", nivel=3; '
+    'Conta CLARO MOVEL em débito automático, vence 20/07 → merchant="Claro Móvel", '
+    'description="Débito automático: Claro Móvel", category_hint="Serviços", nivel=2, scheduled=true.\n\n'
     'Se não for compra/cobrança retorne {"is_purchase": false}.'
 )
 
@@ -104,6 +114,24 @@ def to_cents(amount):
     try: return int(round(float(amount) * 100))
     except Exception: return None
 
+def _email_date_fallback(msg):
+    """data (YYYY-MM-DD) do header Date do e-mail — fallback quando o Claude não extrai
+    uma data confiável do corpo (a coluna transactions.date é NOT NULL, então SEM fallback
+    o INSERT falha silenciosamente e a transação nunca é registrada)."""
+    try:
+        dt = parsedate_to_datetime(msg.get("Date"))
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+def _resolve_account(con, to_header):
+    """Resolve account_id pelo endereço de destino do e-mail: compras-ayla@ -> Nu Ayla,
+    compras@ -> Nu Rodrigo (conta corrente, onde cai débito automático)."""
+    to_l = (to_header or "").lower()
+    name = "Nu Ayla" if "ayla" in to_l else "Nu Rodrigo"
+    row = con.execute("SELECT id FROM accounts WHERE name=?", (name,)).fetchone()
+    return row[0] if row else None
+
 def _resolve_favorecido(con, merchant):
     """Normaliza o nome do merchant contra a tabela de favorecidos (nome + aliases).
     Ex.: 'Amazon.com.br' → 'Amazon'. Retorna o merchant original se não encontrar."""
@@ -132,6 +160,7 @@ def main():
         typ, md = M.fetch(i, "(RFC822)")
         msg = email.message_from_bytes(md[0][1])
         subj = dec(msg.get("Subject")); frm = dec(msg.get("From")); mid = msg.get("Message-ID") or f"noid-{i.decode()}"
+        to_hdr = msg.get("To") or ""
         log(f"• {subj[:60]}")
         # 1) extrato bancário com anexo OFX -> conciliação (dedupe por FITID cobre extratos sobrepostos)
         ofx_text, ofx_name = ofx_attachment(msg)
@@ -153,24 +182,31 @@ def main():
         merchant = (d.get("merchant") or "")[:80]; desc = (d.get("description") or subj)[:120]
         hint_cat = (d.get("category_hint") or "")[:60] or None
         hint_nivel = d.get("nivel") if d.get("nivel") in (2, 3) else None
+        scheduled = bool(d.get("scheduled"))
         # categoria: e-mail tem prioridade sobre regras automáticas
         cat = hint_cat or finance_rules.classify(con, None, desc, merchant)
         # favorecido: normaliza merchant contra tabela de favorecidos (ex: "Amazon.com.br" → "Amazon")
         fav = _resolve_favorecido(con, merchant)
+        acct = _resolve_account(con, to_hdr)
         notes = f"e-mail: {subj[:80]}"
+        status = "agendado" if scheduled else "pendente"
+        tx_date = d.get("date") or _email_date_fallback(msg)
+        if not tx_date:
+            M.store(i, "+FLAGS", "\\Seen"); log("  → sem data (nem no e-mail), ignorado"); continue
         cur = con.execute(
             """INSERT OR IGNORE INTO transactions
-               (date,amount,description,merchant,favorecido,category,source,status,external_id,notes,email_hint_category,email_hint_nivel)
-               VALUES(?,?,?,?,?,?,'email','pendente',?,?,?,?)""",
-            (d.get("date") or None, -abs(cents), desc, merchant, fav, cat, mid, notes,
+               (date,amount,description,merchant,favorecido,category,account_id,source,status,external_id,notes,email_hint_category,email_hint_nivel)
+               VALUES(?,?,?,?,?,?,?,'email',?,?,?,?,?)""",
+            (tx_date, -abs(cents), desc, merchant, fav, cat, acct, status, mid, notes,
              hint_cat, hint_nivel))
         con.commit()
         if cur.rowcount:
             v = f"R$ {cents/100:.2f}".replace(".", ",")
+            tag = " · 📅 agendado" if scheduled else ""
             nivel_tag = f" · N{hint_nivel}" if hint_nivel else ""
             nome = fav or merchant or desc
-            added.append(f"• <b>{v}</b> · {nome} — <i>{desc}</i>{' · '+cat if cat else ''}{nivel_tag}")
-            log(f"  → lançado pendente: {v} {nome} cat={cat} nivel={hint_nivel}")
+            added.append(f"• <b>{v}</b> · {nome} — <i>{desc}</i>{' · '+cat if cat else ''}{nivel_tag}{tag}")
+            log(f"  → lançado {status}: {v} {nome} cat={cat} nivel={hint_nivel} conta={acct}")
         else:
             log("  → duplicado (external_id), pulado")
         M.store(i, "+FLAGS", "\\Seen")

@@ -169,6 +169,17 @@
       "notify_new": true,
       "tvmaze_id": 42846,
       "watch_renewal": true
+    },
+    {
+      "id": 16,
+      "name": "Lucky",
+      "status": "quero ver",
+      "platform": "Apple TV+",
+      "notes": "Estreia 15/07/2026 com os 2 primeiros episodios (S01E01+S01E02); depois 1 ep/semana ate 19/08/2026 (total 7 eps).",
+      "added": "2026-07-12",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 81228
     }
   ]
 }
