@@ -4,17 +4,17 @@
       "id": "1781074240",
       "title": "Daily Digest por e-mail",
       "description": "Cron às 05h que coleta RSS de fontes confiáveis (assunto configurável: IA, tech, etc.), resume com Claude em pt-BR e envia HTML bonito para rodrigor@rodrigor.com. Stack: bash+python3 parse RSS, Claude API curadoria, SMTP existente. Config em digest.json (fontes, assunto, destinatário).",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-10",
-      "notes": ""
+      "notes": "Implementado 2026-07-12: digest.py (RSS stdlib -> curadoria Claude -> e-mail HTML), config digest.json, timer daily-digest 05h. On-demand via Telegram."
     },
     {
       "id": "1781074438",
       "title": "Integrar vaults do Obsidian",
       "description": "Sincronizar vault do Obsidian com GitHub (via plugin Obsidian Git) e clonar no Pi. PIrrai faz git pull antes de cada operação. Operações: buscar notas por palavra-chave (grep nos .md), ler nota, criar nota (commit + push de volta). Stack: git + bash + obsidian.sh. Pré-requisito do usuário: instalar plugin Obsidian Git e apontar para repo GitHub privado.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-10",
-      "notes": "Abordagem definida: sync via Git (melhor que rclone/Drive API). Vault já sincroniza com Google Drive; usuário deve criar repo GitHub privado e configurar Obsidian Git plugin com auto-push a cada 5-10min."
+      "notes": "Concluído: vault_sync.sh + ~/vault-home sincroniza via git (home+uana); vault.sh consulta."
     },
     {
       "id": "1781074519",
@@ -116,9 +116,9 @@
       "id": "1781197325",
       "title": "[FINANÇAS F4] Múltiplas contas",
       "description": "Suporte a N contas cadastráveis: tipo (crédito/débito/espécie/vale), banco/bandeira, cor para identificação visual. Visão por conta ou consolidada. Saldo calculado a partir das transações. Página /contas: listar, adicionar, editar. Cada transação vinculada a uma conta. Transferências entre contas (não contabilizam como gasto). Relatório por conta no mês.",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Concluído: entidade contas, abas por conta, titular, cores."
     },
     {
       "id": "1781197326",
@@ -132,9 +132,9 @@
       "id": "1781197327",
       "title": "[FINANÇAS F5] Relatório mensal automático",
       "description": "Cron no dia 1 de cada mês: gerar relatório do mês anterior em HTML e enviar para rodrigor@rodrigor.com (e opcionalmente Ayla). Conteúdo: total gasto, gasto por categoria (tabela + % do orçamento), top 10 transações, comparativo com mês anterior, saldo por conta, transações não conciliadas pendentes. Também acessível via web em /relatorios. Formato PDF opcional (wkhtmltopdf ou weasyprint).",
-      "status": "backlog",
+      "status": "concluido",
       "created": "2026-06-11",
-      "notes": ""
+      "notes": "Implementado 2026-07-12: finance_report.py + timer finance-report (dia 1, 07h). On-demand via Telegram."
     },
     {
       "id": "1781204175",
@@ -151,6 +151,14 @@
       "status": "backlog",
       "created": "2026-06-12",
       "notes": ""
+    },
+    {
+      "id": "1783889921",
+      "title": "Nível (N1/N2/N3) por transação, não só por categoria",
+      "description": "Hoje o campo 'nivel' fica só na categoria (finance.sh nivel), então mudar o nível afeta TODAS as transações daquela categoria. Ideal: adicionar coluna 'nivel' na tabela transactions (override por transação). Regra de precedência: nivel da transação > nivel_padrao do favorecido (tabela favorecidos) > nivel da categoria (default). Ex.: Refeições é geralmente N2, mas um gasto pontual em restaurante caro (Outback) pode ser marcado como N3 sem mudar a categoria toda. Implementar no computador (schema migration + finance.sh setcat/setnivel por transacao).",
+      "status": "concluido",
+      "created": "2026-07-12",
+      "notes": "Implementado 2026-07-12: coluna transactions.nivel (override), seletor no componente, dashboard/modal/filtro usam COALESCE(t.nivel, cat.nivel, ...)."
     }
   ]
 }
