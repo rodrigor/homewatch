@@ -1,0 +1,10 @@
+[Unit]
+Description=Relatorio financeiro mensal (dia 1, 07:00, mes anterior)
+
+[Timer]
+OnCalendar=*-*-01 07:00:00
+Persistent=true
+AccuracySec=10min
+
+[Install]
+WantedBy=timers.target
