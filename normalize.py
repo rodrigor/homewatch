@@ -23,21 +23,48 @@ def md_to_html(text):
         counter[0] += 1
         return key
 
-    # preserva tags HTML já existentes
-    text = re.sub(r'<(/?(b|i|u|s|code|pre|a|tg-spoiler)(\s[^>]*)?)>', stash_tag, text)
+    # preserva blocos <code>...</code> e <pre>...</pre> INTEIROS (tag + conteúdo)
+    # numa lista à parte, restaurada só no final (depois das conversões de
+    # markdown do passo 2) — o conteúdo é texto literal (nomes de arquivo,
+    # comandos) e NÃO pode ser reinterpretado como markdown, ex.:
+    # "check_new_episodes.sh" tem dois "_" que o regex de itálico abaixo
+    # bateria como _new_ → <i>new</i>, quebrando o nome do arquivo.
+    CODE_PLACEHOLDER = {}
+    code_counter = [0]
+
+    def stash_code(m):
+        return stash_code_str(m.group(0))
+
+    def stash_code_str(s):
+        key = f"\x00CODE{code_counter[0]}\x00"
+        CODE_PLACEHOLDER[key] = s
+        code_counter[0] += 1
+        return key
+
+    text = re.sub(r'<pre>.*?</pre>', stash_code, text, flags=re.DOTALL)
+    text = re.sub(r'<code>.*?</code>', stash_code, text, flags=re.DOTALL)
+    # preserva as demais tags HTML já existentes (só a tag; o conteúdo em volta
+    # ainda passa pelas conversões de markdown abaixo, o que é ok pra b/i/u/s/a)
+    text = re.sub(r'<(/?(b|i|u|s|a|tg-spoiler)(\s[^>]*)?)>', stash_tag, text)
 
     # escapa < > & soltos (que não são tags)
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-    # restaura tags preservadas
+    # restaura tags simples (b/i/u/s/a) — o conteúdo delas ainda passa pelo
+    # passo 2 abaixo, propositalmente
     for key, tag in TAG_PLACEHOLDER.items():
         text = text.replace(key, tag)
 
     # 2. Markdown → HTML
-    # Bloco de código ```...```
-    text = re.sub(r'```(?:\w+\n)?(.*?)```', lambda m: '<pre>' + m.group(1).strip() + '</pre>', text, flags=re.DOTALL)
-    # Código inline `...`
-    text = re.sub(r'`([^`\n]+)`', r'<code>\1</code>', text)
+    # Bloco de código ```...``` — já nasce protegido (stash imediato), senão o
+    # conteúdo (que pode ter "_") seria pego pelas regras de itálico logo abaixo
+    text = re.sub(r'```(?:\w+\n)?(.*?)```',
+                   lambda m: stash_code_str('<pre>' + m.group(1).strip() + '</pre>'),
+                   text, flags=re.DOTALL)
+    # Código inline `...` — mesma proteção
+    text = re.sub(r'`([^`\n]+)`',
+                   lambda m: stash_code_str('<code>' + m.group(1) + '</code>'),
+                   text)
     # Negrito **texto** ou __texto__
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
@@ -50,6 +77,11 @@ def md_to_html(text):
     text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
     # Linhas horizontais ---
     text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+
+    # restaura os blocos <code>/<pre> por último — conteúdo literal, intocado
+    # pelas conversões de markdown acima
+    for key, block in CODE_PLACEHOLDER.items():
+        text = text.replace(key, block)
 
     return text.strip()
 
