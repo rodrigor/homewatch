@@ -198,7 +198,9 @@ TEXTO EXTRAÍDO DO E-MAIL:
 {text[:12000]}
 """
     try:
-        r = subprocess.run(["sudo", "-H", "-u", "pirraikid", "/usr/local/bin/claude",
+        # roda como rodrigor (login do pirraikid ficou desativado); o token de
+        # longa duração chega via drop-in claude-token.conf do email-watch.service
+        r = subprocess.run(["/usr/local/bin/claude",
                             "-p", "--model", "sonnet", prompt],
                            capture_output=True, text=True, timeout=180)
         md = r.stdout.strip()
