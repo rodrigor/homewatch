@@ -389,10 +389,67 @@ process_habits(){ # coach de hábitos: ritmo da semana + revisão de domingo + a
   done
 }
 
+# Reações do Telegram (message_reaction) só chegam se pedidas explicitamente
+# em allowed_updates — por padrão a API não manda esse tipo de update.
+ALLOWED_UPDATES='["message","message_reaction"]'
+
+# mark_episode_watched <message_id> — se essa mensagem era uma notificação de
+# episódio novo (ver check_new_episodes.sh/notify_track), marca o episódio
+# como assistido no series.json e confirma pro Rodrigo.
+mark_episode_watched() {
+  local mid="$1" mapfile="$STATE/episode_notify_map.json"
+  [ -f "$mapfile" ] || return 0
+  local result
+  result=$(python3 - "$mapfile" "$DIR/series.json" "$mid" <<'PYEOF'
+import json, re, sys
+mapfile, seriesfile, mid = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    m = json.load(open(mapfile))
+except Exception:
+    m = {}
+entry = m.get(mid)
+if not entry:
+    print("")
+    sys.exit(0)
+sid = entry.get("series_id")
+ep = entry.get("episode", "")
+name = entry.get("name", "")
+
+def ep_key(e):
+    mm = re.match(r"S(\d+)E(\d+)", e or "")
+    return (int(mm.group(1)), int(mm.group(2))) if mm else (0, 0)
+
+updated = False
+try:
+    data = json.load(open(seriesfile))
+    for s in data.get("series", []):
+        if s.get("id") == sid:
+            name = s.get("name", name)
+            if ep_key(ep) > ep_key(s.get("last_episode", "")):
+                s["last_episode"] = ep
+                updated = True
+            break
+    if updated:
+        json.dump(data, open(seriesfile, "w"), ensure_ascii=False, indent=2)
+except Exception:
+    pass
+
+m.pop(mid, None)
+json.dump(m, open(mapfile, "w"), ensure_ascii=False, indent=2)
+print(f"{name}|{ep}|{'1' if updated else '0'}")
+PYEOF
+)
+  [ -z "$result" ] && return 0
+  IFS='|' read -r ep_name ep_num ep_updated <<< "$result"
+  if [ "$ep_updated" = "1" ]; then
+    tg_html "$TELEGRAM_CHAT_ID" "✅ Marquei <b>$ep_name</b> como assistido até <b>$ep_num</b> 👍"
+  fi
+}
+
 # Ignora mensagens antigas: começa do último update_id+1
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 if [ "$OFFSET" = "0" ]; then
-  last=$(curl -s --max-time 15 --retry 2 "$API/getUpdates?offset=-1" | jq -r '.result[-1].update_id // 0')
+  last=$(curl -s --max-time 15 --retry 2 -G "$API/getUpdates" --data-urlencode "offset=-1" --data-urlencode "allowed_updates=$ALLOWED_UPDATES" | jq -r '.result[-1].update_id // 0')
   OFFSET=$((last + 1)); echo "$OFFSET" > "$OFFSET_FILE"
 fi
 [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg "$TELEGRAM_CHAT_ID" "🟢 PIrrai online (modelo: $(get_model)). Pergunte, peça ações no Pi, ou envie PDF/foto p/ imprimir. /opus = mais raciocínio · /sonnet = padrão · 'opus: ...' p/ uma pergunta só · /reset limpa a conversa."
@@ -405,7 +462,7 @@ while true; do
   process_screen_nudges
   process_habits
   echo "$(date +%s)" > "$STATE/heartbeat"   # watchdog: prova de vida do loop
-  RESP=$(curl -s --max-time 60 "$API/getUpdates?offset=${OFFSET}&timeout=50")
+  RESP=$(curl -s --max-time 60 -G "$API/getUpdates" --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=50" --data-urlencode "allowed_updates=$ALLOWED_UPDATES")
   [ -z "$RESP" ] && sleep 2 && continue
   # ok:false (ex.: HTTP 409 de instância duplicada) virava busy-loop sem pausa;
   # agora backoff exponencial 5s→60s até a API voltar
@@ -418,6 +475,19 @@ while true; do
   while IFS= read -r upd; do
     uid=$(echo "$upd" | jq -r '.update_id')
     OFFSET=$((uid + 1)); echo "$OFFSET" > "$OFFSET_FILE"
+
+    # ===== REAÇÕES (👍 etc.) — update type separado de .message =====
+    r_present=$(echo "$upd" | jq -r 'has("message_reaction")')
+    if [ "$r_present" = "true" ]; then
+      r_chat=$(echo "$upd" | jq -r '.message_reaction.chat.id // empty')
+      r_msgid=$(echo "$upd" | jq -r '.message_reaction.message_id // empty')
+      r_thumbsup=$(echo "$upd" | jq -r '[.message_reaction.new_reaction[]? | select(.type=="emoji" and .emoji=="👍")] | length')
+      if [ "$r_chat" = "$TELEGRAM_CHAT_ID" ] && [ -n "$r_msgid" ] && [ "${r_thumbsup:-0}" -gt 0 ] 2>/dev/null; then
+        mark_episode_watched "$r_msgid"
+      fi
+      continue
+    fi
+
     from=$(echo "$upd" | jq -r '.message.from.id // empty')
     chat=$(echo "$upd" | jq -r '.message.chat.id // empty')
     text=$(echo "$upd" | jq -r '.message.text // empty')
