@@ -105,11 +105,12 @@ def reconcile(con, txns, account=None):
             cand_id, hint_cat, hint_nivel = cand[0], cand[1], cand[2]
             # Se veio de e-mail com hint de categoria, garantir que categoria e nivel estão corretos
             if hint_cat:
-                # preenche a categoria da categoria sugerida pelo e-mail na conciliação
+                # preenche a categoria E o nivel sugeridos pelo e-mail na conciliacao
+                # (nivel so entra se a transacao ainda nao tiver um definido manualmente)
                 con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
                                account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?),
-                               category=? WHERE id=?""",
-                            (t["fitid"], acc_id, t.get("favorecido"), hint_cat, cand_id))
+                               category=?, nivel=COALESCE(nivel,?) WHERE id=?""",
+                            (t["fitid"], acc_id, t.get("favorecido"), hint_cat, hint_nivel, cand_id))
             else:
                 con.execute("""UPDATE transactions SET status='conciliado', external_id=?,
                                account_id=COALESCE(account_id,?), favorecido=COALESCE(favorecido,?) WHERE id=?""",

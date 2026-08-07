@@ -114,6 +114,17 @@ def to_cents(amount):
     try: return int(round(float(amount) * 100))
     except Exception: return None
 
+_ORDER_RE = re.compile(r"\b\d{3}-\d{7}-\d{7}\b")
+
+def _order_number(text):
+    """Extrai o número de pedido Amazon (formato XXX-XXXXXXX-XXXXXXX) do texto, se houver.
+    A Amazon manda VÁRIOS e-mails para o MESMO pedido (Pedido/Confirmação de pagamento/
+    Enviado/Liberado na alfândega), cada um com Message-ID diferente — o dedupe por
+    external_id sozinho não pega isso e cria lançamentos duplicados. Usar o nº do pedido
+    como chave extra de dedupe resolve."""
+    m = _ORDER_RE.search(text or "")
+    return m.group(0) if m else None
+
 def _email_date_fallback(msg):
     """data (YYYY-MM-DD) do header Date do e-mail — fallback quando o Claude não extrai
     uma data confiável do corpo (a coluna transactions.date é NOT NULL, então SEM fallback
@@ -156,6 +167,10 @@ def main():
     ids = data[0].split() if data and data[0] else []
     if not ids: M.logout(); return
     con = sqlite3.connect(DB); added = []; ofx_summaries = []
+    cols = [r[1] for r in con.execute("PRAGMA table_info(transactions)").fetchall()]
+    if "order_ref" not in cols:
+        con.execute("ALTER TABLE transactions ADD COLUMN order_ref TEXT")
+        con.commit()
     for i in ids:
         typ, md = M.fetch(i, "(RFC822)")
         msg = email.message_from_bytes(md[0][1])
@@ -179,6 +194,15 @@ def main():
         cents = to_cents(d.get("amount"))
         if not cents:
             M.store(i, "+FLAGS", "\\Seen"); log("  → sem valor, ignorado"); continue
+        # dedupe por nº do pedido: a Amazon manda varios e-mails (Pedido/Confirmacao/Enviado/
+        # Liberado na alfandega) pro MESMO pedido, cada um com Message-ID diferente — sem isso,
+        # cada e-mail vira um lancamento novo mesmo sendo a mesma compra.
+        order_ref = _order_number(raw)
+        if order_ref and con.execute(
+                "SELECT 1 FROM transactions WHERE order_ref=?", (order_ref,)).fetchone():
+            M.store(i, "+FLAGS", "\\Seen")
+            log(f"  → duplicado (pedido {order_ref} já lançado), pulado")
+            continue
         merchant = (d.get("merchant") or "")[:80]; desc = (d.get("description") or subj)[:120]
         hint_cat = (d.get("category_hint") or "")[:60] or None
         hint_nivel = d.get("nivel") if d.get("nivel") in (2, 3) else None
@@ -193,12 +217,24 @@ def main():
         tx_date = d.get("date") or _email_date_fallback(msg)
         if not tx_date:
             M.store(i, "+FLAGS", "\\Seen"); log("  → sem data (nem no e-mail), ignorado"); continue
+        # dedupe generico: nao so a Amazon manda e-mail duplicado pro mesmo lancamento — o
+        # Nubank tambem manda "aviso de debito automatico" e depois "pagamento realizado com
+        # sucesso" pro MESMO valor/data. Sem numero de pedido pra usar, o fallback e checar se
+        # ja existe outra transacao de e-mail com a MESMA conta+valor+data (match exato, raro
+        # o suficiente pra nao gerar falso positivo).
+        dup = con.execute(
+            "SELECT 1 FROM transactions WHERE source='email' AND account_id IS ? AND amount=? AND date=?",
+            (acct, -abs(cents), tx_date)).fetchone()
+        if dup:
+            M.store(i, "+FLAGS", "\\Seen")
+            log("  → duplicado (mesma conta+valor+data já lançado por e-mail), pulado")
+            continue
         cur = con.execute(
             """INSERT OR IGNORE INTO transactions
-               (date,amount,description,merchant,favorecido,category,account_id,source,status,external_id,notes,email_hint_category,email_hint_nivel)
-               VALUES(?,?,?,?,?,?,?,'email',?,?,?,?,?)""",
-            (tx_date, -abs(cents), desc, merchant, fav, cat, acct, status, mid, notes,
-             hint_cat, hint_nivel))
+               (date,amount,description,merchant,favorecido,category,nivel,account_id,source,status,external_id,notes,email_hint_category,email_hint_nivel,order_ref)
+               VALUES(?,?,?,?,?,?,?,?,'email',?,?,?,?,?,?)""",
+            (tx_date, -abs(cents), desc, merchant, fav, cat, hint_nivel, acct, status, mid, notes,
+             hint_cat, hint_nivel, order_ref))
         con.commit()
         if cur.rowcount:
             v = f"R$ {cents/100:.2f}".replace(".", ",")
