@@ -2,12 +2,21 @@
 # email_watch.py — verifica o inbox do PIrrai (1 ciclo), valida remetente,
 # notifica no Telegram e processa comandos com SEGURANÇA.
 # Execução: como rodrigor (pode sudo -u pirraikid, ler email.env, chamar reminder_add.sh).
-import imaplib, email, os, re, json, subprocess, time
+import imaplib, email, os, re, json, subprocess, time, tempfile, unicodedata
 from email.header import decode_header
 
 DIR = "/home/rodrigor/homewatch"
 INBOX_DIR = os.path.join(DIR, "email_inbox")
 os.makedirs(INBOX_DIR, exist_ok=True)
+VAULT_DROPPED_DIR = "/home/rodrigor/vault-home/inbox/dropped"
+VAULT_PLAUD_DIR = os.path.join(VAULT_DROPPED_DIR, "plaud")
+NEWSLETTER_SENDERS_FILE = os.path.join(DIR, "newsletter_senders.json")
+
+def load_newsletter_senders():
+    try:
+        return json.load(open(NEWSLETTER_SENDERS_FILE, encoding="utf-8"))
+    except Exception:
+        return {}
 
 def load_env(path):
     e = {}
@@ -94,6 +103,122 @@ def save_attachments(msg):
                 saved.append(path)
     return saved
 
+def save_plaud_attachments(msg, subject):
+    """Anexos de e-mails do Plaud (transcript/summary) sempre vao pro vault, em
+    inbox/dropped/plaud/ — pasta liberada no .gitignore pra qualquer tipo de arquivo.
+    Nomeia com data + slug do assunto pra nao colidir (varios e-mails usam nomes
+    genericos tipo transcript.txt/summary.txt)."""
+    os.makedirs(VAULT_PLAUD_DIR, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "-", subject.lower()).strip("-")[:60]
+    date_str = time.strftime("%Y-%m-%d")
+    saved = []
+    for part in msg.walk():
+        fn = part.get_filename()
+        if not fn:
+            continue
+        fn_dec = dec(fn)
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        ext = os.path.splitext(fn_dec)[1] or ".txt"
+        low = fn_dec.lower()
+        kind = "transcricao" if ("transcri" in low or "transcript" in low) else \
+               ("resumo" if ("resumo" in low or "summary" in low) else \
+                re.sub(r"[^A-Za-z0-9._-]", "_", os.path.splitext(fn_dec)[0]))
+        out = os.path.join(VAULT_PLAUD_DIR, f"{date_str}-{slug}-{kind}{ext}")
+        n = 1
+        base_out = out
+        while os.path.exists(out):
+            out = base_out.replace(ext, f"-{n}{ext}")
+            n += 1
+        with open(out, "wb") as f:
+            f.write(payload)
+        saved.append(out)
+    return saved
+
+def get_html(msg):
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/html" and "attachment" not in str(part.get("Content-Disposition")):
+                try:
+                    return part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
+                except Exception:
+                    pass
+    return ""
+
+def html_to_text(html):
+    if not html:
+        return ""
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8")
+    try:
+        tmp.write(html)
+        tmp.close()
+        r = subprocess.run(["lynx", "-dump", "-nolist", "-width=100", tmp.name],
+                            capture_output=True, text=True, timeout=30)
+        return r.stdout
+    except Exception as e:
+        print("lynx erro:", e)
+        return ""
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+def slugify(s, maxlen=60):
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s.lower()).strip("-")
+    return s[:maxlen] or "sem-titulo"
+
+def process_newsletter_auto(msg, subject, addr, sender_name):
+    """Gera fielmente o conteudo completo (sem resumir) de uma edicao de newsletter
+    de remetente ja confirmado em newsletter_senders.json, salva em
+    inbox/dropped/ do vault e retorna o caminho salvo (ou None se nao valer a
+    pena — ex.: e-mail curto/promocional, nao uma edicao de conteudo)."""
+    html = get_html(msg)
+    text = html_to_text(html) if html else get_body(msg)
+    if len(text.strip()) < 600:
+        return None  # provavelmente nao e uma edicao de conteudo (promo/nudge)
+    date_str = time.strftime("%Y-%m-%d")
+    prompt = f"""Você recebe abaixo o texto extraído (via lynx -dump) de um e-mail de newsletter chamada "{sender_name}".
+Gere uma nota em Markdown com o CONTEÚDO COMPLETO da edição, SEM resumir e SEM inventar nada — apenas reformate fielmente o texto abaixo em Markdown limpo (títulos com #/##/###, negrito nos rótulos tipo "O que está acontecendo:", listas com -).
+Comece com este frontmatter YAML exato (preencha title com o título real da edição):
+---
+title: "<título da edição>"
+tipo: newsletter
+fonte: "{sender_name} <{addr}>"
+data: {date_str}
+tags:
+  - newsletter
+---
+Depois o corpo fiel ao conteúdo. Se o texto indicar que parte do conteúdo está bloqueada por paywall/assinatura (ex.: menções a "free trial", "subscribe to keep reading"), adicione logo após o frontmatter uma linha em itálico avisando disso — sem inventar o que está bloqueado.
+Não inclua nenhum comentário seu antes ou depois do markdown. Retorne SOMENTE o markdown.
+
+TEXTO EXTRAÍDO DO E-MAIL:
+{text[:12000]}
+"""
+    try:
+        r = subprocess.run(["sudo", "-H", "-u", "pirraikid", "/usr/local/bin/claude",
+                            "-p", "--model", "sonnet", prompt],
+                           capture_output=True, text=True, timeout=180)
+        md = r.stdout.strip()
+        if not md.startswith("---"):
+            print("process_newsletter_auto: saida sem frontmatter, descartando")
+            return None
+    except Exception as e:
+        print("erro gerando md da newsletter:", e)
+        return None
+    fname = f"{date_str}-{slugify(sender_name)}-{slugify(subject)}.md"
+    path = os.path.join(VAULT_DROPPED_DIR, fname)
+    n = 1
+    base = path
+    while os.path.exists(path):
+        path = base.replace(".md", f"-{n}.md")
+        n += 1
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(md)
+    return path
+
 def classify(person, frm, subject, body, attachments):
     att = ", ".join(os.path.basename(a) for a in attachments) or "nenhum"
     prompt = f"""Você classifica a INTENÇÃO de um email para o sistema PIrrai. NÃO execute nada — só classifique e resuma, retornando APENAS um JSON.
@@ -172,7 +297,52 @@ def main():
         # marca como lido SEMPRE (evita reprocessar), mesmo de remetente não permitido
         M.store(num, "+FLAGS", "\\Seen")
         if not person:
-            print("ignorado (remetente não permitido):", addr)
+            # remetente nao-permitido nao vira comando (por seguranca), mas o Rodrigo quer
+            # saber quando chega algo novo nessa caixa (ex.: confirmacao de cadastro tipo
+            # Plaud) — aviso passivo, sem interpretar/executar nada do conteudo.
+            subj_raw = dec(msg.get("Subject")) or "(sem assunto)"
+            newsletter_senders = load_newsletter_senders()
+            if addr in newsletter_senders:
+                # remetente ja confirmado como newsletter: processa e salva sozinho,
+                # sem perguntar (regra do Rodrigo — só avisa depois de feito).
+                sender_name = newsletter_senders[addr]
+                try:
+                    path = process_newsletter_auto(msg, subj_raw, addr, sender_name)
+                except Exception as e:
+                    path = None; print("erro process_newsletter_auto:", e)
+                if path:
+                    try:
+                        subprocess.run([os.path.join(DIR, "vault_sync.sh"),
+                                        f"newsletter: {sender_name} - {subj_raw[:60]}"],
+                                       capture_output=True, timeout=30)
+                    except Exception as e:
+                        print("vault_sync erro:", e)
+                    tg(ADMIN_CHAT, f"📧📰 Newsletter de {sender_name}: \"{subj_raw}\"\n💾 processada automaticamente, salva em dropped/{os.path.basename(path)} e sincronizada.")
+                else:
+                    tg(ADMIN_CHAT, f"📧 Chegou e-mail em pirrai@ de {sender_name} <{addr}>\nAssunto: {subj_raw}\n(não parece ser uma edição de conteúdo — não processei sozinho, avise se quiser algo)")
+                print("newsletter processada automaticamente:", addr)
+                continue
+            if "plaud" in addr:
+                # excecao: anexos do Plaud (transcript/summary) sempre salvos no vault
+                try:
+                    saved = save_plaud_attachments(msg, subj_raw)
+                except Exception as e:
+                    saved = []; print("erro salvando anexos plaud:", e)
+                if saved:
+                    names = ", ".join(os.path.basename(s) for s in saved)
+                    try:
+                        subprocess.run([os.path.join(DIR, "vault_sync.sh"),
+                                        f"plaud: anexos de \"{subj_raw[:60]}\""],
+                                       capture_output=True, timeout=30)
+                    except Exception as e:
+                        print("vault_sync erro:", e)
+                    tg(ADMIN_CHAT, f"📧🎙️ E-mail do Plaud: {subj_raw}\n💾 {len(saved)} anexo(s) salvos e sincronizados em dropped/plaud/: {names}")
+                else:
+                    tg(ADMIN_CHAT, f"📧🎙️ E-mail do Plaud: {subj_raw}\n(sem anexos pra salvar)")
+                print("plaud processado:", addr)
+                continue
+            print("ignorado como comando, mas notificado:", addr)
+            tg(ADMIN_CHAT, f"📧 Chegou e-mail em pirrai@ de {frm_raw}\nAssunto: {subj_raw}\n(remetente não reconhecido — só aviso, não executei nada)")
             continue
         try:
             process(msg, person)

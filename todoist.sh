@@ -16,11 +16,12 @@ filter_tasks(){ curl -s "${auth[@]}" -G "$API/tasks/filter" --data-urlencode "qu
 
 cmd="${1:-help}"; shift 2>/dev/null || true
 case "$cmd" in
-  add)  # add "texto" [vencimento_pt] [projeto] [prioridade 1-4]
-    content="${1:?uso: add \"texto\" [vencimento] [projeto] [prioridade]}"; due="${2:-}"; proj="${3:-}"; prio="${4:-}"
+  add)  # add "texto" [vencimento_pt] [projeto] [prioridade 1-4] [descricao]
+    content="${1:?uso: add \"texto\" [vencimento] [projeto] [prioridade] [descricao]}"; due="${2:-}"; proj="${3:-}"; prio="${4:-}"; desc="${5:-}"
     args=(--data-urlencode "content=$content")
     [ -n "$due" ]  && args+=(--data-urlencode "due_string=$due" --data-urlencode "due_lang=pt")
     [ -n "$prio" ] && args+=(--data-urlencode "priority=$prio")
+    [ -n "$desc" ] && args+=(--data-urlencode "description=$desc")
     if [ -n "$proj" ]; then
       pid=$(proj_id "$proj")
       [ -z "$pid" ] && pid=$(curl -s "${auth[@]}" -X POST "$API/projects" --data-urlencode "name=$proj" | jq -r '.id // empty')
