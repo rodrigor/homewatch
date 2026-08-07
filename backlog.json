@@ -167,6 +167,14 @@
       "status": "backlog",
       "created": "2026-07-12",
       "notes": ""
+    },
+    {
+      "id": "1784516875",
+      "title": "Evitar duplicata entre múltiplos e-mails do mesmo pedido Amazon",
+      "description": "Amazon manda várias notificações pro mesmo pedido (Pedido/Enviado/Confirmação de pagamento/Liberado na alfândega), cada uma com Message-ID diferente. Quando uma chega combinando itens que já foram lançados individualmente por e-mails anteriores (mesmo total), cria duplicata que nunca reconcilia (ex.: 14/07 - 'Liberado na alfândega' somou 2 livros já lançados separado, R$436,07 extra). Ideal: extrair o número do pedido Amazon (nº XXX-XXXXXXX-XXXXXXX, aparece no corpo) e usar como parte de uma chave de dedupe adicional, ou perguntar ao Claude explicitamente se o e-mail é sobre um pedido já visto (merchant+valor+janela de dias).",
+      "status": "concluido",
+      "created": "2026-07-20",
+      "notes": ""
     }
   ]
 }

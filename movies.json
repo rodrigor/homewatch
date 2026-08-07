@@ -29,6 +29,17 @@
       "status": "aguardando",
       "watch_updates": true,
       "notes": "Sequencia de 'The Batman' (2022), com Robert Pattinson e Colin Farrell (Pinguim). Estreia prevista 01/10/2027 - Colin Farrell nesse filme e um dos motivos que trava a possivel temporada 2 da serie 'The Penguin' (HBO)."
+    },
+    {
+      "id": 4,
+      "name": "Nuremberg",
+      "franchise": "",
+      "watched_prior": "",
+      "platform": "Prime Video (aluguel/compra)",
+      "release_date": "2025-11-07",
+      "status": "quero ver",
+      "watch_updates": false,
+      "notes": "Com Rami Malek e Russell Crowe (Goring). Ja lancado - disponivel para aluguel/compra digital na Prime Video (lar principal em streaming e o Netflix, desde 07/03/2026)."
     }
   ]
 }

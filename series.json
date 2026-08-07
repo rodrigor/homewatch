@@ -51,11 +51,22 @@
       "name": "Breaking Bad",
       "status": "concluída",
       "platform": "Netflix",
-      "notes": "",
+      "notes": "Excelente.",
       "added": "2026-06-10",
       "last_episode": "",
       "notify_new": false,
       "tvmaze_id": 0
+    },
+    {
+      "id": 19,
+      "name": "Better Call Saul",
+      "status": "concluída",
+      "platform": "Netflix",
+      "notes": "Excelente.",
+      "added": "2026-07-15",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 618
     },
     {
       "id": 6,
@@ -131,7 +142,7 @@
       "platform": "Apple TV+",
       "notes": "",
       "added": "2026-07-04",
-      "last_episode": "S03E02",
+      "last_episode": "S03E04",
       "notify_new": true,
       "tvmaze_id": 38052
     },
@@ -173,13 +184,104 @@
     {
       "id": 16,
       "name": "Lucky",
-      "status": "quero ver",
+      "status": "assistindo",
       "platform": "Apple TV+",
-      "notes": "Estreia 15/07/2026 com os 2 primeiros episodios (S01E01+S01E02); depois 1 ep/semana ate 19/08/2026 (total 7 eps).",
+      "notes": "Estreou 15/07/2026 com os 2 primeiros episodios (S01E01+S01E02); depois 1 ep/semana ate 19/08/2026 (total 7 eps).",
       "added": "2026-07-12",
-      "last_episode": "",
+      "last_episode": "S01E04",
       "notify_new": true,
       "tvmaze_id": 81228
+    },
+    {
+      "id": 17,
+      "name": "Uma Casa na Pradaria",
+      "status": "assistindo",
+      "platform": "Netflix",
+      "notes": "Nova adaptacao de 'Little House on the Prairie'. T1 completa (8 eps) lancada de uma vez em 09/07/2026. Sem info de T2 ainda.",
+      "added": "2026-07-13",
+      "last_episode": "S01E08",
+      "notify_new": true,
+      "tvmaze_id": 82345,
+      "watch_renewal": true
+    },
+    {
+      "id": 18,
+      "name": "The Bear",
+      "status": "concluída",
+      "platform": "Disney+ (Star)",
+      "notes": "Excelente. Ja assistida ate a 5a (e ultima) temporada, encerrada em 25/06/2026.",
+      "added": "2026-07-15",
+      "last_episode": "S05E08",
+      "notify_new": false,
+      "tvmaze_id": 54198
+    },
+    {
+      "id": 20,
+      "name": "O Gambito da Rainha",
+      "status": "concluída",
+      "platform": "Netflix",
+      "notes": "Excelente. Minisserie, 1 temporada (7 eps).",
+      "added": "2026-07-15",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 41428
+    },
+    {
+      "id": 21,
+      "name": "1944",
+      "status": "quero ver",
+      "platform": "Paramount+",
+      "notes": "Nova serie do universo Yellowstone (prequel, mesma linha de 1883/1923). Anunciada para 'final de 2026', sem data oficial confirmada na TVmaze ainda.",
+      "added": "2026-07-19",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 73128,
+      "watch_renewal": true
+    },
+    {
+      "id": 22,
+      "name": "Blade Runner 2099",
+      "status": "quero ver",
+      "platform": "Prime Video",
+      "notes": "Nova serie do universo Blade Runner. Estreia prevista 25/11/2026.",
+      "added": "2026-07-23",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 60458
+    },
+    {
+      "id": 23,
+      "name": "Ted Lasso",
+      "status": "quero ver",
+      "platform": "Apple TV+",
+      "notes": "Temporada 4 estreia 05/08/2026, 10 episodios semanais (quartas) ate 07/10/2026. Ted volta a Richmond treinando um time feminino de 2a divisao.",
+      "added": "2026-07-29",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 44458
+    },
+    {
+      "id": 24,
+      "name": "Maximum Pleasure Guaranteed",
+      "status": "assistindo",
+      "platform": "Apple TV+",
+      "notes": "Titulo BR: Prazer Maximo Garantido. Comedia dramatica/thriller com Tatiana Maslany e Jake Johnson. T1 completa (10 eps), encerrada em 15/07/2026. T2 NAO confirmada ainda (sem anuncio oficial); criador demonstrou interesse em continuar.",
+      "added": "2026-07-30",
+      "last_episode": "S01E10",
+      "notify_new": true,
+      "tvmaze_id": 82915,
+      "watch_renewal": true
+    },
+    {
+      "id": 25,
+      "name": "Ozark",
+      "status": "concluída",
+      "platform": "Netflix",
+      "notes": "",
+      "added": "2026-07-30",
+      "last_episode": "",
+      "notify_new": false,
+      "tvmaze_id": 13417
     }
   ]
 }

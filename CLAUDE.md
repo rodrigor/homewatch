@@ -54,3 +54,15 @@ Sempre que o status de alguma série mudar (temporada atual termina = fica parad
 
 ## Finanças — Outback sempre nível N3
 Toda transação do <b>Outback</b> (restaurante) é categoria <b>Refeições</b> mas nível <b>N3 (Discricionário)</b> — diferente do padrão da categoria (N2). Como o motor de regras (finance_rules.py) ainda não aplica nível automaticamente por regra (só categoria — ver item no backlog.sh), aplicar manualmente via SQL (`UPDATE transactions SET nivel=3 WHERE id=...`) toda vez que aparecer um lançamento do Outback.
+
+## Finanças — Anthropic sempre categoria "IA", nível N3
+Toda transação com "Anthropic" na descrição (assinatura Claude, IOF de volta, etc.) é categoria <b>IA</b>, nível <b>N3 (Discricionário)</b>. Já existe regra cadastrada (`finance.sh rule add description "Anthropic" "IA"`) que aplica a categoria sozinha, mas o nível ainda precisa ser setado manualmente via SQL (`UPDATE transactions SET nivel=3 WHERE description LIKE '%Anthropic%' AND nivel IS NOT 3`) toda vez que aparecer lançamento novo — mesma limitação do Outback (motor de regras não aplica nível ainda).
+
+## Vault — anexos do Plaud
+Anexos/arquivos relacionados ao Plaud (app de gravação com IA — plaud.ai) devem ser salvos em `inbox/dropped/plaud/` no vault-home (pasta já criada). Essa é a pasta padrão pra esse tipo de conteúdo; `inbox/dropped/` (e subpastas) já tem exceção no `.gitignore` liberando qualquer tipo de arquivo, então PDFs/anexos exportados do Plaud vão pro git normalmente.
+
+## Newsletters/conteúdo — ferramentas e links interessantes viram tarefa no Todoist
+Sempre que uma newsletter (ou outro conteúdo processado, ex.: e-mail, print) mencionar uma ferramenta/produto ou um link que valha a pena o Rodrigo conferir depois, criar uma tarefa no Todoist no projeto **Ferramentas**: `todoist.sh add "<nome da ferramenta>" "" "Ferramentas" "" "<resumo curto do que é + link>"`.
+- O link colocado na descrição precisa ser a URL REAL do produto (ex.: buscar `nome-da-ferramenta site oficial` via WebSearch), NUNCA o link de rastreamento/redirecionamento do próprio e-mail (newsletters como Evolving AI Insights/AI Secret usam beehiiv e o `href` é um redirect tipo `elinkc04.newsletter...`, não a URL do produto — não usar esse link).
+- Não duplicar: se a ferramenta já tem tarefa aberta no projeto Ferramentas, não recriar.
+- Isso vale tanto para os itens da seção "Trending AI Tools"/"Quick Hits" das newsletters quanto para qualquer ferramenta citada no corpo de uma matéria.
