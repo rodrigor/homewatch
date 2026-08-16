@@ -84,7 +84,7 @@ Coletores (systemd timers) → routerwatch.db → Grafana
 | **Roteador** | `routerwatch.sh`, `routerspeed.sh`, `routerwatch_alerts.sh`, `piwatch.sh` | Telemetria SNMP dual-WAN + speedtest + saúde do Pi → Grafana |
 | **Filhas** | `kid_handler.sh`, `kid_nudge.sh`, `notify_kids.sh`, `screen_usage.sh` | Chat/nudges/tempo de tela das crianças |
 | **Extras** | `series.sh`, `check_new_episodes.sh`, `copa_digest.sh`, `transcribe.sh`, `tts.sh`, `landing.py` | Séries, Copa 2026, voz, página inicial |
-| **Infra** | `service_health.sh`, `homewatch-watchdog.sh`, `finance_backup.sh` | Watchdog, auto-restart e backups |
+| **Infra** | `service_health.sh`, `homewatch-watchdog.sh`, `claude_auth.sh`, `finance_backup.sh` | Watchdog, auto-restart, login do Claude e backups |
 
 ---
 
@@ -139,6 +139,32 @@ sudo systemctl enable --now routerwatch.timer routerspeed.timer piwatch.timer \
 ```
 
 > No Pi, os units em `/etc/systemd/system/` são **symlinks** para este repositório.
+
+### 4. Login do Claude CLI
+
+Quase tudo aqui chama o binário `claude`, e há **dois logins independentes**:
+
+| Usuário | O que depende dele |
+|---|---|
+| `rodrigor` | agente do Telegram, finanças, digest, watches, relatórios |
+| `pirraikid` | chat das filhas, coach/análise de hábitos, nudges |
+
+```bash
+claude                          # dentro: /login   (ou: claude setup-token)
+sudo -H -u pirraikid claude     # dentro: /login
+sudo systemctl restart homewatch-agent.service
+```
+
+Quando o token expira o CLI **imprime o erro no stdout e sai com status 0** — por isso
+`claude_auth.sh` existe: os handlers detectam esse texto, respondem algo compreensível
+em vez do erro cru e gravam um marcador em `state/claude_auth_error_<usuário>`, que o
+`service_health.sh` transforma em alerta no Telegram.
+
+```bash
+./claude_auth.sh status          # há falha registrada?
+./claude_auth.sh check           # probe real dos dois usuários (gasta 1 request cada)
+./claude_auth.sh clear           # limpa o marcador após religar
+```
 
 ---
 

@@ -6,6 +6,7 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$DIR/config.env" ] && source "$DIR/config.env"
+source "$DIR/claude_auth.sh"
 STATE="$DIR/state"
 mkdir -p "$STATE"
 
@@ -152,7 +153,24 @@ check_timer_age "finance-email.timer"  "E-mails financeiros" 30
 check_timer_age "finance-alerts.timer" "Alertas de limite"   75  # roda a cada 1h; tolerância de 15min
 check_timer_age "email-watch.timer"    "Monitor e-mails"     10
 
-# ── 5. Enviar alerta consolidado ───────────────────────────────────────────────
+# ── 5. Login do Claude ─────────────────────────────────────────────────────────
+# Não faz probe (gastaria request a cada rodada): lê o marcador que telegram_agent.sh,
+# finance_handler.sh e kid_handler.sh gravam quando o CLI responde erro de auth.
+# Um probe sob demanda continua disponível em `./claude_auth.sh check`.
+for scope in $CLAUDE_AUTH_SCOPES; do
+  if claude_auth_failing "$scope"; then
+    if should_alert "claudeauth_$scope"; then
+      mins=$(( $(claude_auth_since "$scope") / 60 ))
+      cmd="claude  # /login"
+      [ "$scope" = "pirraikid" ] && cmd="sudo -H -u pirraikid claude  # /login"
+      problems+=("🔑 <b>Login do Claude (<code>$scope</code>) expirou</b> — falhando há ${mins}min (origem: $(claude_auth_origin "$scope"))\nNo Pi: <code>$cmd</code>")
+    fi
+  else
+    clear_alert "claudeauth_$scope"
+  fi
+done
+
+# ── 6. Enviar alerta consolidado ───────────────────────────────────────────────
 if [ ${#problems[@]} -gt 0 ]; then
   msg="🚨 <b>PIrrai Watchdog — Problemas detectados:</b>\n\n"
   for p in "${problems[@]}"; do

@@ -5,6 +5,7 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/config.env"
+source "$DIR/claude_auth.sh"
 export PATH="$HOME/.local/bin:$PATH"
 export HOME="${HOME:-/home/rodrigor}"
 # nota: o token na URL fica visível em `ps` (argv do curl) — risco aceito:
@@ -657,7 +658,13 @@ ENDSYS
     # para os processos de background
     kill "$HBPID" "$STATPID" 2>/dev/null; wait "$HBPID" "$STATPID" 2>/dev/null
     # --- recuperação automática ---
-    if [ -z "$REPLY" ]; then
+    if claude_auth_is_error "$REPLY"; then
+      # login do Claude expirou: o CLI imprime o erro no stdout e sai com 0, então
+      # sem esse teste o erro cru ia pro Telegram. Retry é inútil (falharia igual) —
+      # avisa de forma clara e mantém a sessão (o contexto não se perdeu).
+      claude_auth_mark_fail "agente"
+      REPLY=$(claude_auth_user_msg)
+    elif [ -z "$REPLY" ]; then
       if [ "$CLAUDE_EXIT" -eq 124 ]; then
         # timeout: avisa mas mantém sessão intacta
         tg "$chat" "⏱️ A operação demorou mais de ${CLAUDE_TIMEOUT:-180}s e foi interrompida. Tente novamente ou use /reset se o problema persistir."
@@ -665,7 +672,11 @@ ENDSYS
         # Nível 1: retry sem --continue (sessão limpa)
         rm -f "$SESSION_FLAG"
         REPLY=$(cd "$WORKDIR" && timeout "${CLAUDE_TIMEOUT:-180}" claude -p --model "$USEMODEL" --dangerously-skip-permissions --system-prompt "$SYS" "$text" 2>>"$STATE/agent.log")
-        if [ -n "$REPLY" ]; then
+        if claude_auth_is_error "$REPLY"; then
+          claude_auth_mark_fail "agente (retry)"
+          REPLY=$(claude_auth_user_msg)
+        elif [ -n "$REPLY" ]; then
+          claude_auth_mark_ok
           REPLY="[⚠️ Sessão reiniciada automaticamente]
 
 $REPLY"
@@ -674,6 +685,8 @@ $REPLY"
           REPLY="❌ Não consegui processar sua mensagem. Verifique state/agent.log para detalhes. Use /reset para limpar o contexto e tente novamente."
         fi
       fi
+    else
+      claude_auth_mark_ok   # resposta válida: autenticação está de pé
     fi
     tg_send_long "$chat" "$REPLY"
     [ "${WANT_VOICE:-0}" = "1" ] && speak_to "$chat" "$REPLY"

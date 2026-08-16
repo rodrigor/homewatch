@@ -5,6 +5,7 @@
 # Saída: resposta (texto) no stdout.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$DIR/claude_auth.sh"
 CHATID="$1"; NAME="$2"; MSG="$3"
 KDIR="$DIR/kids/$NAME"; PROF="$KDIR/profile.json"; HIST="$KDIR/history.txt"
 mkdir -p "$KDIR"
@@ -62,6 +63,14 @@ ${HISTTXT:-(início da conversa)}"
 REPLY=$(printf '%s\n\n=== MENSAGEM DA %s ===\n%s' "$SYS" "$NICK" "$MSG" \
   | sudo -H -u pirraikid /usr/local/bin/claude -p --model sonnet 2>>"$KDIR/err.log")
 [ -z "$REPLY" ] && { echo "Ops, tive um probleminha pra responder agora. Tenta de novo? 😊"; exit 0; }
+# login do pirraikid expirou: o CLI imprime o erro no stdout e sai com 0 — sem esse
+# teste o erro cru (em inglês) ia parar no chat da menina. Marca pro watchdog avisar.
+if claude_auth_is_error "$REPLY"; then
+  claude_auth_mark_fail "chat $NAME" pirraikid
+  echo "Ops, tive um probleminha técnico aqui. Já avisei o Rodrigo — tenta de novo mais tarde? 😊"
+  exit 0
+fi
+claude_auth_mark_ok pirraikid
 
 # extrai e aplica <<SAVE {...}>>
 SAVE=$(printf '%s' "$REPLY" | grep -oE '<<SAVE \{.*\}>>' | head -1 | sed 's/^<<SAVE //; s/>>$//')
