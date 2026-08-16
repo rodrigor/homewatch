@@ -157,7 +157,9 @@ check_timer_age "email-watch.timer"    "Monitor e-mails"     10
 # Não faz probe (gastaria request a cada rodada): lê o marcador que telegram_agent.sh,
 # finance_handler.sh e kid_handler.sh gravam quando o CLI responde erro de auth.
 # Um probe sob demanda continua disponível em `./claude_auth.sh check`.
-for scope in $CLAUDE_AUTH_SCOPES; do
+# Só rodrigor: o login do pirraikid está desativado de propósito (commit c9b82b8),
+# então alertar sobre ele seria ruído sobre algo que não se pretende religar agora.
+for scope in ${CLAUDE_AUTH_WATCH_SCOPES:-rodrigor}; do
   if claude_auth_failing "$scope"; then
     if should_alert "claudeauth_$scope"; then
       mins=$(( $(claude_auth_since "$scope") / 60 ))
