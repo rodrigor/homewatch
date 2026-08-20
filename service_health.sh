@@ -41,7 +41,9 @@ HTTP_CHECKS=(
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 notify(){
-  local msg="$1"
+  # os alertas são montados com "\n" literal nas strings; o tg_notify.sh manda o
+  # texto cru, então sem o %b o Telegram exibia "\n" em vez de quebrar linha.
+  local msg; msg=$(printf '%b' "$1")
   local sh="$DIR/tg_notify.sh"
   [ -f "$sh" ] && bash "$sh" "$msg" || true
 }
