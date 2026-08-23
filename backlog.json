@@ -175,6 +175,14 @@
       "status": "concluido",
       "created": "2026-07-20",
       "notes": ""
+    },
+    {
+      "id": "1786372327",
+      "title": "Detecção de parcelamento (installments)",
+      "description": "Tabela installments existe no schema mas nenhum código a popula. Detectar padrão 'x/y' na descrição do OFX/email e agrupar parcelas da mesma compra, permitindo ver o total da compra e não só a parcela do mês. Limitação conhecida: descritores de maquininha (ex.: Cappta) às vezes vêm truncados (~22 chars) e cortam a marcação de parcela antes dela aparecer — nesses casos não dá pra detectar automaticamente.",
+      "status": "concluido",
+      "created": "2026-08-10",
+      "notes": ""
     }
   ]
 }

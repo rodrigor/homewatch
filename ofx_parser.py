@@ -95,12 +95,22 @@ def reconcile(con, txns, account=None):
     for t in txns:
         if t["fitid"] and con.execute("SELECT 1 FROM transactions WHERE external_id=?", (t["fitid"],)).fetchone():
             dup += 1; continue
+        # se sabemos a conta do extrato (acc_id), exige que o candidato seja da MESMA conta
+        # ou ainda sem conta definida — evita casar por coincidência de valor+data com uma
+        # transação de outra conta (mais chance de colisão agora que parcelas "agendado"
+        # ficam meses penduradas no banco à espera de conciliação).
+        acct_filter = "AND (account_id=? OR account_id IS NULL)" if acc_id is not None else ""
+        params = [t["cents"]]
+        if acc_id is not None:
+            params.append(acc_id)
+        params += [t["date"], t["date"]]
         cand = con.execute(
-            """SELECT id, email_hint_category, email_hint_nivel FROM transactions
+            f"""SELECT id, email_hint_category, email_hint_nivel FROM transactions
                WHERE amount=? AND source<>'ofx' AND (external_id IS NULL OR source='email')
+               {acct_filter}
                AND ABS(julianday(date)-julianday(?))<=2
                ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1""",
-            (t["cents"], t["date"], t["date"])).fetchone()
+            params).fetchone()
         if cand:
             cand_id, hint_cat, hint_nivel = cand[0], cand[1], cand[2]
             # Se veio de e-mail com hint de categoria, garantir que categoria e nivel estão corretos

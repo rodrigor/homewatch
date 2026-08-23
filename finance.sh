@@ -150,6 +150,48 @@ case "$cmd" in
     echo "OK — finance.db pronto ($(sq 'SELECT COUNT(*) FROM categories;') categorias). Caminho: $DB"
     ;;
 
+  installment)  # installment add <tx_id_1a_parcela> <n_total> | list | cancel <plan_id>
+    sub="${1:-}"; shift 2>/dev/null || true
+    case "$sub" in
+      add)
+        tx_id="${1:?uso: installment add <tx_id_1a_parcela> <n_total>}"; req_int "$tx_id"
+        n_total="${2:?n_total}"; req_int "$n_total"
+        out=$(python3 "$DIR/finance_installments.py" add "$tx_id" "$n_total")
+        err=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('error',''))" 2>/dev/null)
+        if [ -n "$err" ]; then echo "ERRO: $err"; exit 1; fi
+        echo "$out" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(f\"OK — plano #{d['plan_id']}: {d['n_total']}x de R\$ {abs(d['amount_cents'])/100:.2f}, a partir de {d['start_date']}\")
+print('   transações: ' + ', '.join(f'#{i}' for i in d['created_tx_ids']))
+"
+        ;;
+      cancel)
+        plan_id="${1:?uso: installment cancel <plan_id>}"; req_int "$plan_id"
+        out=$(python3 "$DIR/finance_installments.py" cancel "$plan_id")
+        echo "$out" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(f\"OK — plano #{d['plan_id']} cancelado, {len(d['removed_tx_ids'])} parcela(s) futura(s) removida(s)\")
+"
+        ;;
+      list|*)
+        python3 "$DIR/finance_installments.py" list | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)
+if not rows:
+    print('(nenhum plano de parcelamento)')
+else:
+    for r in rows:
+        if r['cancelled']:
+            continue
+        status = 'quitado' if r['remaining_n']==0 else f\"falta {r['remaining_n']} (prox. {r['next_due']})\"
+        print(f\"#{r['plan_id']} · {r['description']} · {r['n_total']}x de R\$ {abs(r['amount_cents'])/100:.2f} · {status}\")
+"
+        ;;
+    esac
+    ;;
+
   group)  # group "<categoria>" "<grupo>"
     cat="${1:?uso: group \"categoria\" \"grupo\"}"; grp="${2:?grupo}"
     sq "UPDATE categories SET grupo='$(esc "$grp")' WHERE name='$(esc "$cat")';"

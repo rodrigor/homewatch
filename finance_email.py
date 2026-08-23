@@ -7,7 +7,7 @@ from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-import ofx_parser, finance_rules
+import ofx_parser, finance_rules, finance_installments
 DB = os.path.join(ROOT, "finance.db")
 LOG = os.path.join(ROOT, "state", "finance_email.log")
 os.makedirs(os.path.join(ROOT, "state"), exist_ok=True)
@@ -55,6 +55,10 @@ SYS = (
     'Amazon com fone de ouvido → category_hint="Eletrônicos", nivel=3; '
     'Conta CLARO MOVEL em débito automático, vence 20/07 → merchant="Claro Móvel", '
     'description="Débito automático: Claro Móvel", category_hint="Serviços", nivel=2, scheduled=true.\n\n'
+    'Regras para "installments": se o e-mail mencionar parcelamento (ex.: "em 6x de R$ 50,00", '
+    '"6x sem juros", "parcelado em 3 vezes"), preencha com o número de parcelas (inteiro >= 2). '
+    'O "amount" continua sendo o valor de CADA parcela (não o total da compra). '
+    'Se não houver menção a parcelamento (pagamento à vista, pix, boleto único), use null.\n\n'
     'Se não for compra/cobrança retorne {"is_purchase": false}.'
 )
 
@@ -241,7 +245,20 @@ def main():
             tag = " · 📅 agendado" if scheduled else ""
             nivel_tag = f" · N{hint_nivel}" if hint_nivel else ""
             nome = fav or merchant or desc
-            added.append(f"• <b>{v}</b> · {nome} — <i>{desc}</i>{' · '+cat if cat else ''}{nivel_tag}{tag}")
+            # parcelamento: o e-mail (ex.: Amazon "em 6x de R$X") já informa quantas parcelas —
+            # gera direto as transações futuras (agendado), reconciliadas sozinhas mês a mês
+            n_inst = d.get("installments")
+            inst_tag = ""
+            if isinstance(n_inst, int) and n_inst >= 2:
+                new_tx_id = con.execute("SELECT id FROM transactions WHERE external_id=?", (mid,)).fetchone()
+                if new_tx_id:
+                    plan = finance_installments.add(new_tx_id[0], n_inst)
+                    if "error" not in plan:
+                        inst_tag = f" · 💳 parcelado {n_inst}x (plano #{plan['plan_id']})"
+                        log(f"  → parcelamento criado: plano #{plan['plan_id']} {n_inst}x")
+                    else:
+                        log(f"  → parcelamento NÃO criado: {plan['error']}")
+            added.append(f"• <b>{v}</b> · {nome} — <i>{desc}</i>{' · '+cat if cat else ''}{nivel_tag}{tag}{inst_tag}")
             log(f"  → lançado {status}: {v} {nome} cat={cat} nivel={hint_nivel} conta={acct}")
         else:
             log("  → duplicado (external_id), pulado")
