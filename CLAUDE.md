@@ -66,3 +66,10 @@ Sempre que uma newsletter (ou outro conteúdo processado, ex.: e-mail, print) me
 - O link colocado na descrição precisa ser a URL REAL do produto (ex.: buscar `nome-da-ferramenta site oficial` via WebSearch), NUNCA o link de rastreamento/redirecionamento do próprio e-mail (newsletters como Evolving AI Insights/AI Secret usam beehiiv e o `href` é um redirect tipo `elinkc04.newsletter...`, não a URL do produto — não usar esse link).
 - Não duplicar: se a ferramenta já tem tarefa aberta no projeto Ferramentas, não recriar.
 - Isso vale tanto para os itens da seção "Trending AI Tools"/"Quick Hits" das newsletters quanto para qualquer ferramenta citada no corpo de uma matéria.
+
+## Anotações — "anota isso" vai para o repo `anotacoes`
+O acervo de anotações (~280 notas Obsidian) fica em `~/anotacoes` (repo privado `rodrigor/anotacoes`, label `anotacoes` no `repos.sh`). Sempre que o Rodrigo mandar anotar/guardar algo, **crie a nota lá e atualize o `_INDEX.md`** — usando `/home/rodrigor/homewatch/anota.sh`, nunca escrevendo o `.md` ou o índice à mão.
+- **Antes**, `git -C ~/anotacoes pull --ff-only` e procure nota existente do assunto (`repos.sh find`): se existir, **edite** em vez de duplicar.
+- `anota.sh nota "Título" "descrição de uma linha" "tags" "url|-" "relacionadas|-" "Seção" <<< "corpo"` — ferramenta/serviço/conceito, entra no índice. `anota.sh secoes` lista as seções válidas.
+- `anota.sh captura "Título" "tipo" "fonte" "tags" <<< "corpo"` — conteúdo datado (dica, print, newsletter): vira `AAAA-MM-DD-slug.md` e **não** entra no índice.
+- `anota.sh sync "mensagem"` publica (repo privado — push é só sincronizar com o Obsidian do Mac).
