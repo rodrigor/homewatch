@@ -21,6 +21,7 @@ set -eu
 # "label|dir|descrição (a regra que pega vem depois de — )"
 REPOS=(
   "eurotrip|$HOME/2026.eurotrip|Viagem à Alemanha e Itália, out/nov 2026, 4 pessoas (Rodrigo, Ayla, Ana, Gabriela). Roteiro, reservas, orçamento, documentos. — programacao.md é a fonte de verdade da linha do tempo; README.md e programacao.html são GERADOS (build_readme.py / build_programacao.py), não edite à mão. NUNCA comprar, reservar, pagar ou submeter formulário de visto."
+  "homepage|$HOME/rodrigor.github.io|Site pessoal do Rodrigo (rodrigor.com): Jekyll + Bootstrap 5 no GitHub Pages. Páginas em pt na raiz (index.md, cv.md, contact.md) e em inglês sob en/; _data/i18n.yml tem os textos de interface e _data/links.yml os perfis acadêmicos. — ÚNICO repo de ESCRITA: mudanças na página são feitas aqui, editando o .md/.yml da página certa nos DOIS idiomas quando o texto aparece nos dois. Todo push na main PUBLICA o site ao vivo (.github/workflows/deploy.yml) — commit local sempre, push só quando o Rodrigo mandar publicar. Não mexer em _sass/bootstrap/ (vendor) nem em _site/ (build)."
   "boardgames|$HOME/boardgames|Coleção de jogos de tabuleiro: inventário e histórico de partidas. — colecao.md é GERADO do export do app BGStats pelo gerar-colecao.py; NUNCA edite à mão nem 'corrija' um dado nele. A fonte de verdade é o BGStats/BGG (usuário rodrigor); conserto é lá + novo export."
 )
 
@@ -34,7 +35,7 @@ desc_of(){ for r in "${REPOS[@]}"; do [ "${r%%|*}" = "$1" ] && { echo "${r##*|}"
 
 # arquivos de texto do repo (ignora .git e os binários grandes: PDFs, imagens, exports)
 files_of(){ find "$1" -path '*/.git' -prune -o -type f \
-    \( -name '*.md' -o -name '*.py' -o -name '*.txt' -o -name '*.html' \) -print 2>/dev/null; }
+    \( -name '*.md' -o -name '*.py' -o -name '*.txt' -o -name '*.html' -o -name '*.yml' \) -print 2>/dev/null; }
 
 cmd="${1:-list}"; shift || true
 case "$cmd" in
@@ -82,7 +83,11 @@ case "$cmd" in
       files_of "$d" | while read -r f; do
         score=0
         for t in "$@"; do grep -qi -- "$t" "$f" 2>/dev/null && score=$((score+1)); done
-        [ "$score" -gt 0 ] && printf '%s\t%s\n' "$score" "$(echo "$f" | sed "s#^$d/#$l/#")"
+        # if/fi, não "[ ] && cmd": com score 0 o teste falha, vira o último status do
+        # corpo do while e o set -e mata o subshell — engolindo o resto dos repos.
+        if [ "$score" -gt 0 ]; then
+          printf '%s\t%s\n' "$score" "$(echo "$f" | sed "s#^$d/#$l/#")"
+        fi
       done
     done | sort -rn | head -n "$n" ;;
   update)
