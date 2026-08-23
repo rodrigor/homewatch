@@ -234,7 +234,9 @@ Retorne SÓ este JSON (sem texto fora dele):
 {{"action":"summarize|reminder|save|none","summary":"<resumo curto em pt-BR, sempre preencha>","reminder_when":"<data/hora que o date -d entende, ou ->","reminder_msg":"<texto do lembrete, ou ->"}}
 Regras: "reminder" se pedir pra ser lembrado de algo em data/hora; "save" se pedir pra guardar o anexo; "summarize" se pedir resumo ou se nao houver comando claro; "none" so se for spam/vazio."""
     try:
-        r = subprocess.run(["sudo", "-H", "-u", "pirraikid", "/usr/local/bin/claude",
+        # roda como rodrigor (login do pirraikid ficou desativado); o token de
+        # longa duração chega via drop-in claude-token.conf do email-watch.service
+        r = subprocess.run(["/usr/local/bin/claude",
                             "-p", "--model", "sonnet", prompt],
                            capture_output=True, text=True, timeout=150)
         out = r.stdout.strip()
