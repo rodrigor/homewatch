@@ -40,6 +40,28 @@
       "status": "quero ver",
       "watch_updates": false,
       "notes": "Com Rami Malek e Russell Crowe (Goring). Ja lancado - disponivel para aluguel/compra digital na Prime Video (lar principal em streaming e o Netflix, desde 07/03/2026)."
+    },
+    {
+      "id": 5,
+      "name": "The Mandalorian & Grogu",
+      "franchise": "Star Wars",
+      "watched_prior": "",
+      "platform": "Disney+",
+      "release_date": "2026-09-02",
+      "status": "quero ver",
+      "watch_updates": false,
+      "notes": "Dirigido por Jon Favreau (roteiro c/ Dave Filoni). Elenco: Pedro Pascal, Sigourney Weaver, Jeremy Allen White. Ja lancado nos cinemas em 22/05/2026 ($246.9M bilheteria); chega ao Disney+ em 02/09/2026."
+    },
+    {
+      "id": 6,
+      "name": "Túmulo dos Vagalumes",
+      "franchise": "Studio Ghibli",
+      "watched_prior": "",
+      "platform": "Cinema (Cinemark, relancamento exclusivo)",
+      "release_date": "2026-08-20",
+      "status": "quero ver",
+      "watch_updates": false,
+      "notes": "Classico de 1988 (Isao Takahata). Relancamento exclusivo Cinemark a partir de 20/08/2026. Pre-venda ja aberta, com photocard colecionavel enquanto durar estoque. Sem info de streaming."
     }
   ]
 }
