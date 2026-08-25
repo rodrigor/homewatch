@@ -81,7 +81,7 @@ Coletores (systemd timers) → routerwatch.db → Grafana
 | **Finanças** | `finance.sh`, `ofx_parser.py`, `finance_rules.py`, `finance_email.py`, `web/finance/app.py` | Importação OFX/e-mail, engine de regras, split composto, dashboard |
 | **Agenda** | `agenda.py`/`agenda.sh`, `gcal.py`, `todoist.sh` | Google Calendar (iCal, leitura) + Todoist; horários livres |
 | **Hábitos** | `habit*.sh`, `web/habitos/app.py` | CRUD de metas, nudges, revisão semanal, dashboard |
-| **Roteador** | `routerwatch.sh`, `routerspeed.sh`, `routerwatch_alerts.sh`, `piwatch.sh` | Telemetria SNMP dual-WAN + speedtest + saúde do Pi → Grafana |
+| **Roteador** | `routerwatch.sh`, `routerspeed.sh`, `routerwatch_alerts.sh`, `piwatch.sh` | Telemetria SNMP dual-WAN + speedtest + saúde do Pi → Grafana. O speedtest marca `wan_ok=0` quando a rodada saiu pela WAN errada (failover), e os painéis descartam essas medições |
 | **Filhas** | `kid_handler.sh`, `kid_nudge.sh`, `notify_kids.sh`, `screen_usage.sh` | Chat/nudges/tempo de tela das crianças |
 | **Extras** | `series.sh`, `check_new_episodes.sh`, `copa_digest.sh`, `transcribe.sh`, `tts.sh`, `landing.py` | Séries, Copa 2026, voz, página inicial |
 | **Infra** | `service_health.sh`, `homewatch-watchdog.sh`, `claude_auth.sh`, `finance_backup.sh` | Watchdog, auto-restart, login do Claude e backups |
