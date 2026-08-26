@@ -4,7 +4,7 @@ em pt-BR e envia um HTML bonito. RSS/Atom via stdlib (sem dependências).
 Uso: digest.py [--dry] [--config digest.json]"""
 import os, sys, ssl, json, html, smtplib, subprocess, shutil, datetime, urllib.request, re
 from email.message import EmailMessage
-from email.utils import parsedate_to_datetime
+from email.utils import parsedate_to_datetime, make_msgid
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -127,6 +127,10 @@ def send(cfg, html_body):
     m = EmailMessage()
     m["Subject"] = f"📰 Digest {cfg.get('assunto','IA & Tech')} — {datetime.date.today().strftime('%d/%m')}"
     m["From"] = user; m["To"] = to
+    # domain= explícito: sem ele o make_msgid usa o FQDN da máquina, que no Pi é
+    # só "pi" (o resolvedor atual não resolve nome local). O Gmail rejeita esse
+    # Message-ID com 550-5.7.1 "missing a valid Message-ID header".
+    m["Message-ID"] = make_msgid(domain=user.split("@")[-1])
     m.set_content("Seu cliente não exibe HTML.")
     m.add_alternative(html_body, subtype="html")
     with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context()) as s:

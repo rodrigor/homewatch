@@ -8,6 +8,7 @@ Uso:
 """
 import os, sys, ssl, smtplib, sqlite3, datetime
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(ROOT, "finance.db")
@@ -159,6 +160,10 @@ def send(html, mes):
     m = EmailMessage()
     m["Subject"] = f"💰 Finanças — {mes_label(mes)}"
     m["From"] = user; m["To"] = to
+    # domain= explícito: sem ele o make_msgid usa o FQDN da máquina, que no Pi é
+    # só "pi" (o resolvedor atual não resolve nome local). O Gmail rejeita esse
+    # Message-ID com 550-5.7.1 "missing a valid Message-ID header".
+    m["Message-ID"] = make_msgid(domain=user.split("@")[-1])
     m.set_content("Seu cliente não exibe HTML. Abra o painel: https://pirrai.tail414b9b.ts.net:8443/financas")
     m.add_alternative(html, subtype="html")
     with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context()) as s:
