@@ -22,7 +22,7 @@ set -eu
 REPOS=(
   "eurotrip|$HOME/2026.eurotrip|Viagem à Alemanha e Itália, out/nov 2026, 4 pessoas (Rodrigo, Ayla, Ana, Gabriela). Roteiro, reservas, orçamento, documentos. — programacao.md é a fonte de verdade da linha do tempo; README.md e programacao.html são GERADOS (build_readme.py / build_programacao.py), não edite à mão. NUNCA comprar, reservar, pagar ou submeter formulário de visto."
   "homepage|$HOME/rodrigor.github.io|Site pessoal do Rodrigo (rodrigor.com): Jekyll + Bootstrap 5 no GitHub Pages. Páginas em pt na raiz (index.md, cv.md, contact.md) e em inglês sob en/; _data/i18n.yml tem os textos de interface e _data/links.yml os perfis acadêmicos. — repo de ESCRITA, e o único que é PÚBLICO: mudanças na página são feitas aqui, editando o .md/.yml da página certa nos DOIS idiomas quando o texto aparece nos dois. Todo push na main PUBLICA o site ao vivo (.github/workflows/deploy.yml) — commit local sempre, push só quando o Rodrigo mandar publicar. Não mexer em _sass/bootstrap/ (vendor) nem em _site/ (build)."
-  "anotacoes|$HOME/anotacoes|Acervo de anotações do Rodrigo (~280 notas, Obsidian): ferramentas, serviços, conceitos, livros e conteúdo capturado. Repo de ESCRITA — é AQUI que vai tudo que ele mandar \"anota isso\". — nunca crie nota à mão: use /home/rodrigor/homewatch/anota.sh (nota, captura, index, sync), que já escreve o frontmatter do padrão e insere no _INDEX.md na seção certa. _INDEX.md é mantido pelo anota.sh, não edite à mão."
+  "anotacoes|$HOME/anotacoes|Acervo de anotações do Rodrigo (notas Obsidian; o repos.sh list mostra a contagem atual): ferramentas, serviços, conceitos, livros e conteúdo capturado. Repo de ESCRITA — é AQUI que vai tudo que ele mandar \"anota isso\". — nunca crie nota à mão: use /home/rodrigor/homewatch/anota.sh (nota, captura, index, sync), que já escreve o frontmatter do padrão e insere no _INDEX.md na seção certa. _INDEX.md é mantido pelo anota.sh, não edite à mão."
   "boardgames|$HOME/boardgames|Coleção de jogos de tabuleiro: inventário e histórico de partidas. — colecao.md é GERADO do export do app BGStats pelo gerar-colecao.py; NUNCA edite à mão nem 'corrija' um dado nele. A fonte de verdade é o BGStats/BGG (usuário rodrigor); conserto é lá + novo export."
 )
 
@@ -37,6 +37,8 @@ desc_of(){ for r in "${REPOS[@]}"; do [ "${r%%|*}" = "$1" ] && { echo "${r##*|}"
 # arquivos de texto do repo (ignora .git e os binários grandes: PDFs, imagens, exports)
 files_of(){ find "$1" -path '*/.git' -prune -o -type f \
     \( -name '*.md' -o -name '*.py' -o -name '*.txt' -o -name '*.html' -o -name '*.yml' \) -print 2>/dev/null; }
+# mesma máscara para o grep recursivo do search/find (sem aspas no uso: são vários args)
+INCL="--include=*.md --include=*.py --include=*.txt --include=*.html --include=*.yml"
 
 cmd="${1:-list}"; shift || true
 case "$cmd" in
@@ -72,25 +74,20 @@ case "$cmd" in
     n="${2:-40}"
     for l in $(labels); do
       d=$(dir_of "$l"); [ -d "$d" ] || continue
-      files_of "$d" | while read -r f; do
-        grep -Hin -- "$termo" "$f" 2>/dev/null | sed "s#^$d/#$l/#"
-      done
+      grep -rHin --exclude-dir=.git $INCL -- "$termo" "$d" 2>/dev/null | sed "s#^$d/#$l/#"
     done | head -n "$n" ;;
   find)
     n=25; case "${1:-}" in ''|*[!0-9]*) :;; *) n="$1"; shift;; esac
     [ $# -gt 0 ] || die "uso: repos.sh find [n] termo1 termo2 ..."
     for l in $(labels); do
       d=$(dir_of "$l"); [ -d "$d" ] || continue
-      files_of "$d" | while read -r f; do
-        score=0
-        for t in "$@"; do grep -qi -- "$t" "$f" 2>/dev/null && score=$((score+1)); done
-        # if/fi, não "[ ] && cmd": com score 0 o teste falha, vira o último status do
-        # corpo do while e o set -e mata o subshell — engolindo o resto dos repos.
-        if [ "$score" -gt 0 ]; then
-          printf '%s\t%s\n' "$score" "$(echo "$f" | sed "s#^$d/#$l/#")"
-        fi
+      # um grep -l por TERMO (não por arquivo): com 419 notas no anotacoes o loop
+      # por arquivo levava ~9s. O score é o nº de termos distintos que casam,
+      # contado pelo uniq -c.
+      for t in "$@"; do
+        grep -rli --exclude-dir=.git $INCL -- "$t" "$d" 2>/dev/null | sed "s#^$d/#$l/#"
       done
-    done | sort -rn | head -n "$n" ;;
+    done | sort | uniq -c | sort -rn | head -n "$n" | sed -E 's/^ *([0-9]+) /\1\t/' ;;
   update)
     want="${1:-}"
     for l in $(labels); do
