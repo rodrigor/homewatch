@@ -8,9 +8,7 @@ HOST = "pirrai.tail414b9b.ts.net"
 # (icone, nome, descrição, url, cor)
 SERVICES = [
     ("💰", "Finanças", "Controle financeiro — gastos, receitas, favorecidos", f"https://{HOST}:8443", "#3fb950"),
-    # Dashboard de hábitos fora do ar: o sistema foi reescrito sobre SQLite e o
-    # painel volta na fatia 5, lendo do banco novo em vez dos JSONs antigos.
-    # ("🏃", "Hábitos", "Dashboard pessoal — VO2, peso, exercício e pausas", f"https://{HOST}:8444", "#f0883e"),
+    ("💪", "Hábitos", "Estratégia corrente, semanas, medições e revisões do coach", f"https://{HOST}:8444", "#f0883e"),
     ("🌐", "Pi-hole", "Bloqueio de anúncios e painel de DNS da casa", f"http://{HOST}/admin", "#c62828"),
     ("🖥️", "Dispositivos", "Inventário da rede — quem está conectado", f"http://{HOST}:8080", "#2f81f7"),
     ("📶", "Omada", "Controlador da rede Wi-Fi (TP-Link)", f"http://{HOST}:8088", "#00838f"),

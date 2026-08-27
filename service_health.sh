@@ -18,7 +18,7 @@ ALWAYS_ON=(
   "homewatch-agent.service:Agente Telegram"
   "homewatch-web.service:Painel dispositivos (8080)"
   "finance-web.service:Painel financeiro (8090)"
-  # habit-web fora do ar de propósito: painel volta na fatia 5 do sistema novo
+  "habitos-web.service:Painel hábitos (8091)"
   "pirrai-landing.service:Landing page (80)"
 )
 
@@ -35,7 +35,7 @@ ONESHOT=(
 HTTP_CHECKS=(
   "http://127.0.0.1:8090/|Painel financeiro"
   "http://127.0.0.1:8080/api/devices|API dispositivos"
-  # 8091 (painel hábitos) fora: volta na fatia 5, lendo do SQLite novo
+  "http://127.0.0.1:8091/|Painel hábitos"
   "http://127.0.0.1:80/|Landing page"
 )
 
