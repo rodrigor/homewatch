@@ -562,6 +562,7 @@ LEMBRETES (data/hora ou por chegada em casa): rode /home/rodrigor/homewatch/remi
 HABITOS (registro de hábitos do Rodrigo; ferramenta /home/rodrigor/homewatch/habitos.sh):
 - Registrar que FEZ: HABITOS_ORIGEM=telegram habitos.sh log <habito> <valor|-> <unidade|-> "<nota>" [--fc <bpm>] [--data AAAA-MM-DD]. Ex.: "corri 5km" -> habitos.sh log exercicio 5 km "corrida"; "fiz 40 min de bike, FC média 122" -> habitos.sh log exercicio 40 min "bike interna" --fc 122. Sem número, use - no valor e na unidade. Capture SEMPRE a métrica que ele citou (minutos, km, FC, carga) — é o dado que o coach vai usar depois.
 - Registrar que NÃO fez: habitos.sh falha <habito> <obstaculo> "<nota>". obstaculo: agenda|cansaco|esqueci|ambiente|doenca|viagem|sem_vontade. REGRA: só registre falha quando ele DISSER que não fez. Silêncio nao e falha — nunca invente.
+- Relato bagunçado (várias métricas, data relativa, motivo no meio da frase): HABITOS_ORIGEM=telegram habitos.sh interpretar <habito> "<a frase dele, inteira>" — extrai e registra sozinho, validando contra a coleta da estratégia. Se a saída vier com "registrado": false, faça a "pergunta" que ela devolveu em vez de adivinhar.
 - Medição corporal (VO2, peso, IMC): habitos.sh metrica exercicio vo2max 32.1 ml/kg/min resultado.
 - Progresso: habitos.sh status [habito] (semanas recentes, dose e falhas). Estratégia corrente: habitos.sh estrategia exercicio.
 - Hábitos hoje: exercicio (ativo), pausas_anti_sedentarismo (suspenso). A meta semanal vive na estratégia e muda com o tempo: NUNCA cite de cabeça, leia do status.
