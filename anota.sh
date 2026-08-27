@@ -122,10 +122,15 @@ print(f"índice: [[{titulo}]] em \x27{secao}\x27 (linha {pos+1})")
   sync)
     msg="${2:?uso: anota.sh sync \"mensagem\"}"
     cd "$REPO"
-    git pull --rebase -q || { echo "anota.sh: pull falhou — resolva à mão em $REPO" >&2; exit 1; }
+    # commita ANTES de puxar: com pull --rebase primeiro, editar ou apagar uma
+    # nota existente deixava alteracao nao-staged e o rebase se recusava a rodar.
     git add -A
-    git diff --cached --quiet && { echo "anota.sh: nada a commitar"; exit 0; }
-    git commit -q -m "$msg"
+    if git diff --cached --quiet; then
+      git rev-list --count origin/main..HEAD 2>/dev/null | grep -qv "^0$" || { echo "anota.sh: nada a commitar"; exit 0; }
+    else
+      git commit -q -m "$msg"
+    fi
+    git pull --rebase -q || { echo "anota.sh: pull falhou — resolva à mão em $REPO" >&2; exit 1; }
     git push -q origin main && echo "anota.sh: publicado — $(git log --oneline -1)" ;;
 
   *) echo "uso: anota.sh secoes|nota|captura|index|sync (veja o cabeçalho do script)" >&2; exit 1 ;;
