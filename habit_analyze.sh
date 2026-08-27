@@ -4,6 +4,7 @@
 # (comemorar/subir nível se bateu; diagnosticar+adaptar se não), aplica no arquivo, devolve a mensagem.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$DIR/claude_auth.sh"
 P="$1"; F="$2"; CNT="${3:-0}"; TARGET="${4:-1}"; MET="${5:-0}"
 [ -f "$F" ] || exit 0
 NAME=$(jq -r .name "$F")
@@ -32,7 +33,17 @@ $GOAL
 Escreva também a MENSAGEM para $NICK: curtíssima (1-2 frases), tom $TONE, framing de parceria/experimento, ZERO sermão/culpa, no máx 1 emoji. Se houver evolução nas métricas, pode mencionar de leve (motiva).
 Responda SÓ um JSON: {\"assessment\":\"<análise curta>\",\"change_type\":\"...\",\"new_target\":<int ou null>,\"message\":\"<mensagem pra $NICK>\"}"
 
-OUT=$(printf '%s' "$PROMPT" | sudo -H -u pirraikid /usr/local/bin/claude -p --model opus 2>/dev/null)
+# Roda como o usuário atual (rodrigor): o hábito é dele e o login do pirraikid
+# está desativado. O sandbox pirraikid segue valendo só p/ as personas das filhas.
+OUT=$(printf '%s' "$PROMPT" | /usr/local/bin/claude -p --model opus 2>/dev/null)
+# O CLI imprime erro de auth no STDOUT e sai 0: sem esse teste a revisão de
+# domingo passava batida (sem adaptação) e ninguém ficava sabendo.
+if claude_auth_is_error "$OUT"; then
+  claude_auth_mark_fail "habit_analyze"
+  OUT=""
+elif [ -n "$OUT" ]; then
+  claude_auth_mark_ok
+fi
 JSON=$(printf '%s' "$OUT" | grep -oE '\{.*\}' | head -1)
 MSG=""
 if [ -n "$JSON" ] && printf '%s' "$JSON" | jq . >/dev/null 2>&1; then

@@ -62,16 +62,31 @@ def save_json(fp, data):
     with open(tmp, "w") as f: json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, fp)
 
-def plan_phase(habit):
-    """(week_num, phase_name, phase_desc) baseado em semanas desde criação."""
-    start = datetime.date.fromtimestamp(habit.get("created", 0))
-    weeks = max(1, (datetime.date.today() - start).days // 7 + 1)
+def weeks_trained(habit):
+    """Nº de semanas distintas em que houve pelo menos um treino registrado."""
+    wks = set()
+    for e in habit.get("log", []):
+        if not e.get("done"): continue
+        try: d = datetime.date.fromisoformat(e.get("date") or "")
+        except ValueError: continue
+        wks.add(monday_of(d))
+    return len(wks)
+
+def plan_phase(habit, perfil):
+    """(semanas_treinadas, fase, descrição) do plano VO2.
+    A fase avança por semanas EM QUE HOUVE TREINO, não por tempo de calendário:
+    ficar parado não promove ninguém de fase. As faixas de FC vêm do perfil
+    (Zona 2 calibrada pelos dados reais do Watch, não pela fórmula)."""
+    weeks = weeks_trained(habit)
+    metas = perfil.get("metas", {})
+    z2 = metas.get("zona2_bpm", "120-135")
+    z4 = metas.get("zona4_bpm", "144-155")
     if weeks <= 4:
-        return weeks, "Fase 1 — Base Zona 2", "25-35 min ergométrica · 106-123 bpm"
+        return weeks, "Fase 1 — Base Zona 2", f"25-35 min ergométrica · {z2} bpm"
     elif weeks <= 8:
-        return weeks, "Fase 2 — Progressão", "2× Zona 2 (40 min) + 1× HIIT 30s/90s × 8"
+        return weeks, "Fase 2 — Progressão", f"2× Zona 2 40 min ({z2} bpm) + 1× HIIT 30s/90s × 8 ({z4} bpm)"
     else:
-        return weeks, "Fase 3 — Intensidade", "1× Zona 2 longo (50 min) + 2× HIIT"
+        return weeks, "Fase 3 — Intensidade", f"1× Zona 2 longo 50 min ({z2} bpm) + 2× HIIT ({z4} bpm)"
 
 # ── auth ──────────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -121,7 +136,7 @@ def api_status():
             if e.get("value") and e.get("unit"):
                 u = e["unit"]; metrics[u] = metrics.get(u, 0) + (e["value"] or 0)
         is_ex    = "exerc" in h.get("name", "").lower()
-        wn, pname, pdesc = plan_phase(h) if is_ex else (0, "", "")
+        wn, pname, pdesc = plan_phase(h, perfil) if is_ex else (0, "", "")
         result.append({
             "id": h["id"], "name": h["name"], "type": h.get("type"),
             "target": target, "done_this_week": done_wk,
@@ -129,6 +144,7 @@ def api_status():
             "color": HABIT_COLORS[i % len(HABIT_COLORS)],
             "last_log": last, "week_metrics": metrics,
             "why": h.get("why", ""), "tiny": h.get("tiny", ""),
+            "is_exercise": is_ex,
             "week_num": wn, "phase_name": pname, "phase_desc": pdesc,
         })
 
@@ -545,11 +561,12 @@ async function loadDashboard() {
 }
 
 function renderPhase() {
-  const ex = ST.habits.find(h => h.week_num > 0);
+  const ex = ST.habits.find(h => h.is_exercise);
   if (!ex) { document.getElementById('phase').innerHTML=''; return; }
+  const sem = ex.week_num === 1 ? '1 semana com treino' : `${ex.week_num} semanas com treino`;
   document.getElementById('phase').innerHTML =
     `<div class=phase><div class=phase-wk>S${ex.week_num}</div>
-     <div class=phase-tag>Semana ${ex.week_num} do plano VO2</div>
+     <div class=phase-tag>Plano VO2 · ${sem}</div>
      <div class=phase-name>${ex.phase_name}</div>
      <div class=phase-desc>${ex.phase_desc}</div></div>`;
 }

@@ -3,6 +3,7 @@
 # Gera UMA mensagem proativa de coach de hábito, na persona/tom da pessoa. (sandbox pirraikid)
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$DIR/claude_auth.sh"
 P="$1"; F="$2"; SIT="$3"; EXTRA="${4:-}"
 [ -f "$F" ] || exit 0
 NAME=$(jq -r .name "$F"); TINY=$(jq -r '.tiny // ""' "$F"); WHY=$(jq -r '.why // ""' "$F")
@@ -31,5 +32,15 @@ SYS="Você é $BOT, coach de hábitos pessoal e parceiro de $NICK. Gere UMA mens
 REGRAS: ZERO sermão, ZERO culpa, ZERO 'você falhou'. Tom de parceria e experimento. Não cite estatísticas frias; fale humano. ${WHY:+Motivação dela: $WHY.}
 Situação: $CTX
 Responda APENAS a mensagem."
-printf '%s' "$SYS" | sudo -H -u pirraikid /usr/local/bin/claude -p --model sonnet 2>/dev/null \
-  | sed 's/<<SAVE {.*}>>//g' | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba}'
+# Roda como o usuário atual (rodrigor): o hábito é dele e o login do pirraikid
+# está desativado. O sandbox pirraikid segue valendo só p/ as personas das filhas.
+MSG=$(printf '%s' "$SYS" | /usr/local/bin/claude -p --model sonnet 2>/dev/null \
+  | sed 's/<<SAVE {.*}>>//g' | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba}')
+# O CLI imprime erro de auth no STDOUT e sai 0: sem esse teste o 401 ia pro
+# Telegram como se fosse o nudge do coach. Melhor calar (o service_health alerta).
+if claude_auth_is_error "$MSG"; then
+  claude_auth_mark_fail "habit_coach"
+  exit 0
+fi
+[ -n "$MSG" ] && claude_auth_mark_ok
+printf '%s' "$MSG"
