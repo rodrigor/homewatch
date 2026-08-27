@@ -262,6 +262,14 @@ def validar(spec):
             dias = g.get("dias") or []
             if not dias or any(d not in range(1, 8) for d in dias):
                 raise Invalida("gatilho.dias deve ser lista de 1..7 (1=segunda)")
+        perg = g.get("pergunta")
+        if perg:
+            import perguntas as PG
+            for lado in ("sim", "nao"):
+                acao = perg.get(lado)
+                if not acao or acao.get("tipo") not in PG.TIPOS:
+                    raise Invalida(f"gatilho.pergunta.{lado} precisa de uma ação conhecida "
+                                   f"(use {sorted(PG.TIPOS)})")
         if g.get("msg") and g["msg"] not in spec["mensagens"]:
             raise Invalida(f"gatilho aponta para mensagem inexistente: {g['msg']}")
 

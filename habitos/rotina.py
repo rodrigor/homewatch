@@ -29,19 +29,38 @@ NOTIFY_KIDS = os.path.join(RAIZ, "notify_kids.sh")
 
 
 # ── envio ────────────────────────────────────────────────────────────────────
-def enviar(canal, texto, dry=False):
+def enviar(canal, texto, dry=False, quer_id=False):
+    """-> True/False, ou o message_id quando quer_id (para a reação achar a
+    pergunta depois)."""
     if dry:
         print(f"[dry-run] {canal}: {texto}")
-        return True
+        return "dry" if quer_id else True
     if canal.startswith("telegram_kid:"):
         cmd = [NOTIFY_KIDS, texto, canal.split(":", 1)[1]]
     else:
-        cmd = [TG_NOTIFY, texto]
+        cmd = [TG_NOTIFY] + (["--id"] if quer_id else []) + [texto]
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=30).returncode == 0
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except Exception as e:                                   # noqa: BLE001
         print(f"falha ao enviar: {e}", file=sys.stderr)
         return False
+    if p.returncode != 0:
+        return False
+    return (p.stdout or "").strip() if quer_id else True
+
+
+def perguntar(spec, texto, sim, nao, dry=False):
+    """Manda uma pergunta de sim/não e deixa a resposta pronta para chegar por
+    reação. A ação de cada lado é declarada AGORA, não interpretada depois."""
+    msg_id = enviar(spec.get("canal", "telegram_admin"), E.assinar(spec, texto),
+                    dry, quer_id=True)
+    if not msg_id or dry:
+        return msg_id
+    subprocess.run([os.path.join(DIR, "perguntas.py"), "registrar", str(msg_id),
+                    spec["habito"], "--texto", texto,
+                    "--sim", json.dumps(sim), "--nao", json.dumps(nao)],
+                   capture_output=True, timeout=30)
+    return msg_id
 
 
 # ── contexto para renderizar mensagem ────────────────────────────────────────
@@ -187,16 +206,21 @@ def processar_gatilhos(con, spec, agora, dry):
         if lembretes_do_dia(con, habito, dia, i):
             continue
         ctx = contexto(con, spec, agora)
-        texto = E.assinar(spec, render(spec, g.get("msg", "lembrete"), ctx))
+        texto = render(spec, g.get("msg", "lembrete"), ctx)
+        if not g.get("pergunta"):
+            texto = E.assinar(spec, texto)   # perguntar() já assina
         if not texto.strip():
             continue
-        if enviar(spec.get("canal", "telegram_admin"), texto, dry):
+        perg = g.get("pergunta")
+        entregue = (perguntar(spec, texto, perg["sim"], perg["nao"], dry) if perg
+                    else enviar(spec.get("canal", "telegram_admin"), texto, dry))
+        if entregue:
             enviados += 1
             if not dry:
                 R.grava_evento(con, habito, "lembrete", "rotina", dia,
                                {"gatilho": i, "msg": g.get("msg"), "texto": texto,
                                 "para": alvo, "hora": agora.strftime("%H:%M"),
-                                "horario_usado": quando,
+                                "horario_usado": quando, "pergunta": bool(g.get("pergunta")),
                                 "aprendido": g["quando"] == "auto"})
                 con.commit()
     return enviados

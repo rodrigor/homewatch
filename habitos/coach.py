@@ -441,10 +441,15 @@ def cmd_avaliar(a, con):
 
     msg = (prop.get("mensagem") or "").strip() or mensagem_padrao(spec, medida, prop)
     if veredito == "pede_ok" and novo:
-        msg += (f"\n\n🔧 Proposta que precisa do seu ok ({motivo}):\n<code>"
+        # proposta fora do envelope espera gente: 👍 aplica, 👎 recusa e fica
+        # registrado que a recusa foi decisão humana, não esquecimento
+        import rotina
+        msg += (f"\n\n🔧 Precisa do seu ok ({motivo}):\n<code>"
                 + json.dumps(mudancas, ensure_ascii=False) +
-                f"</code>\nResponda <b>aplicar {a.habito}</b> para valer.")
-    if msg:
+                "</code>\n👍 aplico · 👎 deixo como está")
+        rotina.perguntar(spec, msg, {"tipo": "aplicar_proposta"},
+                         {"tipo": "nota", "texto": f"proposta recusada: {mudancas}"})
+    elif msg:
         subprocess.run([TG, E.assinar(spec, msg)], capture_output=True, timeout=30)
     resultado["mensagem"] = msg
     return resultado

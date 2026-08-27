@@ -438,8 +438,20 @@ while true; do
       r_chat=$(echo "$upd" | jq -r '.message_reaction.chat.id // empty')
       r_msgid=$(echo "$upd" | jq -r '.message_reaction.message_id // empty')
       r_thumbsup=$(echo "$upd" | jq -r '[.message_reaction.new_reaction[]? | select(.type=="emoji" and .emoji=="👍")] | length')
-      if [ "$r_chat" = "$TELEGRAM_CHAT_ID" ] && [ -n "$r_msgid" ] && [ "${r_thumbsup:-0}" -gt 0 ] 2>/dev/null; then
-        mark_episode_watched "$r_msgid"
+      r_thumbsdown=$(echo "$upd" | jq -r '[.message_reaction.new_reaction[]? | select(.type=="emoji" and .emoji=="👎")] | length')
+      if [ "$r_chat" = "$TELEGRAM_CHAT_ID" ] && [ -n "$r_msgid" ]; then
+        # 1) pergunta de sim/não de algum coach? (sai 3 quando a mensagem não é dele)
+        r_resp=""
+        [ "${r_thumbsup:-0}" -gt 0 ] 2>/dev/null && r_resp="sim"
+        [ "${r_thumbsdown:-0}" -gt 0 ] 2>/dev/null && r_resp="nao"
+        if [ -n "$r_resp" ]; then
+          if r_out=$("$DIR/habitos/perguntas.py" resolver "$r_msgid" "$r_resp" 2>/dev/null); then
+            [ -n "$r_out" ] && tg_html "$TELEGRAM_CHAT_ID" "$r_out"
+            continue
+          fi
+        fi
+        # 2) senão, o caminho antigo: 👍 em notificação de episódio novo
+        [ "${r_thumbsup:-0}" -gt 0 ] 2>/dev/null && mark_episode_watched "$r_msgid"
       fi
       continue
     fi
