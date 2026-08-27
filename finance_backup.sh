@@ -27,9 +27,12 @@ send_mail(){
   python3 - "$file" <<'PY'
 import sys,os,smtplib,ssl
 from email.message import EmailMessage
+from email.utils import make_msgid
 f=sys.argv[1]
 m=EmailMessage()
 m['From']=os.environ['EMAIL_USER']; m['To']=os.environ['BACKUP_TO']
+# domain= explícito: o FQDN da máquina é só "pi" e o Gmail rejeita (550-5.7.1)
+m['Message-ID']=make_msgid(domain=os.environ['EMAIL_USER'].split('@')[-1])
 m['Subject']='[PIrrai] Backup finance.db '+os.path.basename(f)
 m.set_content('Backup criptografado (AES-256) em anexo. Restaure com finance_backup.sh restore e a senha de backup.')
 with open(f,'rb') as fh:

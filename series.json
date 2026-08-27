@@ -31,7 +31,7 @@
       "platform": "Max",
       "notes": "",
       "added": "2026-06-10",
-      "last_episode": "S03E03",
+      "last_episode": "S03E08",
       "notify_new": true,
       "tvmaze_id": 44778
     },
@@ -142,7 +142,7 @@
       "platform": "Apple TV+",
       "notes": "",
       "added": "2026-07-04",
-      "last_episode": "S03E04",
+      "last_episode": "S03E08",
       "notify_new": true,
       "tvmaze_id": 38052
     },
@@ -184,12 +184,12 @@
     {
       "id": 16,
       "name": "Lucky",
-      "status": "assistindo",
+      "status": "concluída",
       "platform": "Apple TV+",
-      "notes": "Estreou 15/07/2026 com os 2 primeiros episodios (S01E01+S01E02); depois 1 ep/semana ate 19/08/2026 (total 7 eps).",
+      "notes": "T1 completa (7 eps), encerrada em 19/08/2026. TVmaze marca como Ended, sem T2 anunciada.",
       "added": "2026-07-12",
-      "last_episode": "S01E04",
-      "notify_new": true,
+      "last_episode": "S01E07",
+      "notify_new": false,
       "tvmaze_id": 81228
     },
     {
@@ -252,9 +252,9 @@
     {
       "id": 23,
       "name": "Ted Lasso",
-      "status": "quero ver",
+      "status": "assistindo",
       "platform": "Apple TV+",
-      "notes": "Temporada 4 estreia 05/08/2026, 10 episodios semanais (quartas) ate 07/10/2026. Ted volta a Richmond treinando um time feminino de 2a divisao.",
+      "notes": "Temporada 4, 10 episodios semanais (quartas) ate 07/10/2026. Ted volta a Richmond treinando um time feminino de 2a divisao. S04E04 saiu em 26/08/2026.",
       "added": "2026-07-29",
       "last_episode": "",
       "notify_new": true,
@@ -282,6 +282,17 @@
       "last_episode": "",
       "notify_new": false,
       "tvmaze_id": 13417
+    },
+    {
+      "id": 26,
+      "name": "Stuart Fails to Save the Universe",
+      "status": "quero ver",
+      "platform": "HBO Max",
+      "notes": "Spin-off de The Big Bang Theory. Stuart Bloom quebra um aparelho do Sheldon/Leonard e causa guerra multiversal. Estreou 23/07/2026, 1 temporada de 10 eps, 1/semana.",
+      "added": "2026-08-07",
+      "last_episode": "",
+      "notify_new": true,
+      "tvmaze_id": 83360
     }
   ]
 }

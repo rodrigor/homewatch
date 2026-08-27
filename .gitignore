@@ -1,14 +1,11 @@
 # Segredos e configuração local
-config.env
-email.env
-todoist.env
-agenda.env
+# *.env em vez da lista nominal: cada .env novo já nasce ignorado. A lista
+# antiga só cobria os sete que existiam, então um módulo novo (cloudflare.env,
+# por exemplo) seria commitado com o segredo dentro sem ninguém notar.
+*.env
 gcal_client.json
 gcal_token.json
-gcal.env
-finance.env
 finance_users.json
-routerwatch.env
 web/admin_token.txt
 web/habitos/.secret
 
@@ -40,3 +37,6 @@ __pycache__/
 backups/
 web/finance/.secret
 reminders.json.lock
+
+# Estratégias de hábito (dados pessoais: motivação, gatilhos, histórico)
+habitos/estrategias/

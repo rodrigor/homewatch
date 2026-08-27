@@ -8,6 +8,7 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/config.env"
+source "$DIR/claude_auth.sh"
 export PATH="$HOME/.local/bin:$PATH"
 export HOME="${HOME:-/home/rodrigor}"
 CHATID="$1"; NAME="$2"; MSG="$3"
@@ -47,14 +48,29 @@ if [ -f "$SESSION_FLAG" ]; then CONT="--continue"; else CONT=""; touch "$SESSION
 REPLY=$(cd "$WORKDIR" && timeout "${FINANCE_TG_TIMEOUT:-180}" claude -p $CONT --model "$MODEL" \
           --dangerously-skip-permissions --system-prompt "$SYS" "$MSG" 2>>"$STATE/finance_tg.log")
 EXIT=$?
-if [ -z "$REPLY" ]; then
+# login do Claude expirou: o CLI imprime o erro no stdout e sai com 0. A Ayla não
+# tem como resolver isso (é no Pi, com o Rodrigo) — resposta genérica pra ela e
+# marcador pro service_health.sh avisar o Rodrigo.
+if claude_auth_is_error "$REPLY"; then
+  claude_auth_mark_fail "finanças ($NAME)"
+  REPLY="🔧 Estou fora do ar por um problema técnico — já avisei o Rodrigo. Tenta de novo daqui a pouco, $NAME?"
+elif [ -z "$REPLY" ]; then
   if [ "$EXIT" -eq 124 ]; then
     REPLY="⏱️ Demorei demais pra responder. Tenta de novo, $NAME?"
   else
     rm -f "$SESSION_FLAG"   # retry com sessão limpa
     REPLY=$(cd "$WORKDIR" && timeout "${FINANCE_TG_TIMEOUT:-180}" claude -p --model "$MODEL" \
               --dangerously-skip-permissions --system-prompt "$SYS" "$MSG" 2>>"$STATE/finance_tg.log")
-    [ -z "$REPLY" ] && REPLY="❌ Não consegui processar agora. Tenta de novo daqui a pouco."
+    if claude_auth_is_error "$REPLY"; then
+      claude_auth_mark_fail "finanças ($NAME, retry)"
+      REPLY="🔧 Estou fora do ar por um problema técnico — já avisei o Rodrigo. Tenta de novo daqui a pouco, $NAME?"
+    elif [ -z "$REPLY" ]; then
+      REPLY="❌ Não consegui processar agora. Tenta de novo daqui a pouco."
+    else
+      claude_auth_mark_ok
+    fi
   fi
+else
+  claude_auth_mark_ok
 fi
 printf '%s' "$REPLY"

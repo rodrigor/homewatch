@@ -8,7 +8,8 @@ from email.header import decode_header
 DIR = "/home/rodrigor/homewatch"
 INBOX_DIR = os.path.join(DIR, "email_inbox")
 os.makedirs(INBOX_DIR, exist_ok=True)
-VAULT_DROPPED_DIR = "/home/rodrigor/vault-home/inbox/dropped"
+VAULT_DROPPED_DIR = "/home/rodrigor/dropped"      # arquivos/binarios -> vem por dropped-pull
+ANOTACOES_DIR = "/home/rodrigor/anotacoes"        # notas .md -> repo rodrigor/anotacoes
 VAULT_PLAUD_DIR = os.path.join(VAULT_DROPPED_DIR, "plaud")
 NEWSLETTER_SENDERS_FILE = os.path.join(DIR, "newsletter_senders.json")
 
@@ -172,8 +173,8 @@ def slugify(s, maxlen=60):
 
 def process_newsletter_auto(msg, subject, addr, sender_name):
     """Gera fielmente o conteudo completo (sem resumir) de uma edicao de newsletter
-    de remetente ja confirmado em newsletter_senders.json, salva em
-    inbox/dropped/ do vault e retorna o caminho salvo (ou None se nao valer a
+    de remetente ja confirmado em newsletter_senders.json, salva como captura no
+    repo ~/anotacoes e retorna o caminho salvo (ou None se nao valer a
     pena — ex.: e-mail curto/promocional, nao uma edicao de conteudo)."""
     html = get_html(msg)
     text = html_to_text(html) if html else get_body(msg)
@@ -211,7 +212,7 @@ TEXTO EXTRAÍDO DO E-MAIL:
         print("erro gerando md da newsletter:", e)
         return None
     fname = f"{date_str}-{slugify(sender_name)}-{slugify(subject)}.md"
-    path = os.path.join(VAULT_DROPPED_DIR, fname)
+    path = os.path.join(ANOTACOES_DIR, fname)
     n = 1
     base = path
     while os.path.exists(path):
@@ -234,7 +235,9 @@ Retorne SÓ este JSON (sem texto fora dele):
 {{"action":"summarize|reminder|save|none","summary":"<resumo curto em pt-BR, sempre preencha>","reminder_when":"<data/hora que o date -d entende, ou ->","reminder_msg":"<texto do lembrete, ou ->"}}
 Regras: "reminder" se pedir pra ser lembrado de algo em data/hora; "save" se pedir pra guardar o anexo; "summarize" se pedir resumo ou se nao houver comando claro; "none" so se for spam/vazio."""
     try:
-        r = subprocess.run(["sudo", "-H", "-u", "pirraikid", "/usr/local/bin/claude",
+        # roda como rodrigor (login do pirraikid ficou desativado); o token de
+        # longa duração chega via drop-in claude-token.conf do email-watch.service
+        r = subprocess.run(["/usr/local/bin/claude",
                             "-p", "--model", "sonnet", prompt],
                            capture_output=True, text=True, timeout=150)
         out = r.stdout.strip()
@@ -314,12 +317,12 @@ def main():
                     path = None; print("erro process_newsletter_auto:", e)
                 if path:
                     try:
-                        subprocess.run([os.path.join(DIR, "vault_sync.sh"),
-                                        f"newsletter: {sender_name} - {subj_raw[:60]}"],
-                                       capture_output=True, timeout=30)
+                        subprocess.run([os.path.join(DIR, "anota.sh"), "sync",
+                                        f"captura: newsletter {sender_name} - {subj_raw[:60]}"],
+                                       capture_output=True, timeout=60)
                     except Exception as e:
-                        print("vault_sync erro:", e)
-                    tg(ADMIN_CHAT, f"📧📰 Newsletter de {sender_name}: \"{subj_raw}\"\n💾 processada automaticamente, salva em dropped/{os.path.basename(path)} e sincronizada.")
+                        print("anota.sh sync erro:", e)
+                    tg(ADMIN_CHAT, f"📧📰 Newsletter de {sender_name}: \"{subj_raw}\"\n💾 processada automaticamente, salva no repo anotacoes como {os.path.basename(path)} e publicada.")
                 else:
                     tg(ADMIN_CHAT, f"📧 Chegou e-mail em pirrai@ de {sender_name} <{addr}>\nAssunto: {subj_raw}\n(não parece ser uma edição de conteúdo — não processei sozinho, avise se quiser algo)")
                 print("newsletter processada automaticamente:", addr)
@@ -332,13 +335,7 @@ def main():
                     saved = []; print("erro salvando anexos plaud:", e)
                 if saved:
                     names = ", ".join(os.path.basename(s) for s in saved)
-                    try:
-                        subprocess.run([os.path.join(DIR, "vault_sync.sh"),
-                                        f"plaud: anexos de \"{subj_raw[:60]}\""],
-                                       capture_output=True, timeout=30)
-                    except Exception as e:
-                        print("vault_sync erro:", e)
-                    tg(ADMIN_CHAT, f"📧🎙️ E-mail do Plaud: {subj_raw}\n💾 {len(saved)} anexo(s) salvos e sincronizados em dropped/plaud/: {names}")
+                    tg(ADMIN_CHAT, f"📧🎙️ E-mail do Plaud: {subj_raw}\n💾 {len(saved)} anexo(s) salvos em dropped/plaud/: {names}")
                 else:
                     tg(ADMIN_CHAT, f"📧🎙️ E-mail do Plaud: {subj_raw}\n(sem anexos pra salvar)")
                 print("plaud processado:", addr)

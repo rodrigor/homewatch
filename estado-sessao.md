@@ -1,59 +1,143 @@
-# Estado da sessão — 2026-06-11 (Claude Code no Mac)
+# Estado da sessão — 2026-08-16 (Claude Code na web)
 
-Contexto para continuar o trabalho no Raspberry Pi. Sessão anterior analisou o
-projeto, corrigiu 5 problemas de segurança/robustez e refinou o backlog de finanças.
+Contexto para continuar no Raspberry Pi. Sessão investigou o 401 do agente do
+Telegram, criou a detecção de falha de auth (PR #1) e descobriu que o coach de
+hábitos do Rodrigo está morto em silêncio desde 07/08.
 
-## Commits desta sessão
+Branch: `claude/authentication-issue-sc8xvw` · PR (draft): https://github.com/rodrigor/homewatch/pull/1
 
-- `cf2c0b9` — **fix: segurança e robustez** (5 itens):
-  1. kid_handler: mensagem truncada/`<<SAVE` neutralizado, nick/bot_name ≤40 chars,
-     seção SEGURANÇA no prompt (perfil/histórico/mensagem = dados, não instruções)
-  2. telegram_agent: escape de aspas simples no SQL dos lembretes por presença
-  3. web/app.py: `/api/authcheck` via header `X-Auth-Token` (não query string)
-  4. `tg_send_long` divide por linha (split -b cortava tag HTML/UTF-8 no meio);
-     `tg_html` cai para texto puro se o Telegram rejeitar o HTML
-  5. `kid_print`: cota diária atômica com flock + estorno em falha
-- `a23e29f` — **backlog finanças refinado** + `finance.env.example` + .gitignore
+---
 
-## Pendências imediatas no Pi
+## 1. O incidente do 401 — diagnóstico
 
-- [ ] Conferir se os serviços foram reiniciados após `cf2c0b9`:
-      `sudo systemctl restart homewatch-agent homewatch-web`
-- [ ] Criar `finance.env` (template em `finance.env.example`; a senha do e-mail
-      `compras@mail.rodrigor.com` está com o Rodrigo — NUNCA commitar). `chmod 600`.
-- [ ] Testar IMAP: `curl -s --url "imaps://mail.supremecluster.com:993/INBOX" --user "compras@mail.rodrigor.com:SENHA" -X "EXAMINE INBOX"`
+Em 15/08 22:55 e 22:57 o agente respondeu no Telegram:
 
-## Módulo de finanças — decisões já tomadas (ver backlog.json, itens [FINANÇAS])
+```
+Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue.
+```
 
-- 11 itens em 5 fases; F1 = finance.db + finance.sh + web com login + lançamento manual + **backup**
-- Valores em **centavos INTEGER** (nunca float); `transactions.external_id` = FITID
-  do OFX com UNIQUE (reimport idempotente)
-- Usuários web: **rodrigor (admin)** e **ayla (editor — esposa)**; hash werkzeug
-- Segurança: avaliar bind 127.0.0.1 + VPN (web/app.py hoje faz 0.0.0.0 — README
-  diz localhost-only mas o código não cumpre)
-- E-mail de compras: `compras@mail.rodrigor.com`, mail.supremecluster.com,
-  IMAP 993 / SMTP 465 (SSL). Extração de transações: **Claude (haiku) como caminho
-  principal** com schema rígido; parsers fixos só onde compensar. Corpo de e-mail
-  é dado não-confiável (mesma defesa anti-injeção do kid_handler)
-- Lançamento via Telegram precisa funcionar para a ayla — hoje o chat dela cai no
-  kid_handler (sandbox sem ferramentas); definir caminho (item …319, notes)
-- `finance.db` NÃO é reconstruível → item de backup é F1, antes de acumular dados
-- Lacunas anotadas na análise, ainda sem item próprio: **receitas** (salário/entradas)
-  e **despesas recorrentes fixas** (aluguel, assinaturas — não são parcelamento)
+O `claude -p` imprime isso no **stdout** e sai com **status 0** — para quem chama é
+indistinguível de resposta válida. Por isso o erro cru foi repassado ao Telegram e o
+retry automático (que só dispara com `REPLY` vazio) repetiu a mesma falha.
 
-## Backlog (18 itens) — estado geral
+**Mas notificações voltaram depois** (05:13 compra, 08:00 relatório). Isso NÃO é
+contradição: há duas credenciais independentes na máquina.
 
-- Todoist: `concluido` (todoist.sh + agenda_morning.sh + timer systemd)
-- Abertos: Daily Digest, Obsidian (abordagem git definida), Alunos Ayty,
-  Atividades Ayty/Uaná, Google Calendar, 12× FINANÇAS (F1–F5 + backup)
+| Credencial | Onde | Quem usa |
+|---|---|---|
+| Login OAuth interativo | `~/.claude/.credentials.json` | `homewatch-agent.service` — **o que expirou** |
+| Token de longa duração | drop-in `claude-token.conf` (só no Pi, fora do git) | `email-watch.service` (ver commit `c9b82b8`) |
 
-## Avisos técnicos (válidos para o ambiente Mac)
+Detalhe: a mensagem das **06:00 ("Bom dia")** não usa Claude nenhum — `agenda_morning.sh`
+só chama `todoist.sh`. Não serve como evidência. As de 05:13 (`finance_email.py:103`)
+e 08:00 (`report.sh:29`) usam.
 
-- `bash -n` no macOS (bash 3.2) FALHA no telegram_agent.sh por bug com heredoc
-  dentro de `$( )` — não é erro do script; no Pi (bash 5) passa
-- macOS não tem `flock` — testes de concorrência só no Pi/Linux
+### Pendente: descobrir qual hipótese é a certa
 
-## Próximo passo sugerido
+- **(A)** `finance-email` e o cron do `report.sh` também têm drop-in de token longo →
+  nunca dependeram da credencial quebrada, e **o agente segue quebrado**.
+- **(B)** Só o agente usa o OAuth; o refresh falhou de forma transitória às 22:55 e se
+  recuperou sozinho. (O agente respondia normal às 15:51 e quebrou ~7h depois, batendo
+  com a vida útil típica do access token.)
 
-Implementar [FINANÇAS F1]: schema do finance.db + finance.sh (add/list/categorize/
-accounts) + backup, na ordem. Itens `1781197317` e `1781204175` do backlog.json.
+Teste decisivo: **mandar qualquer mensagem pro bot.** Respondeu → (B). Deu 401 → (A).
+
+```bash
+ls -l /etc/systemd/system/*.service.d/           # quem tem drop-in
+systemctl cat homewatch-agent finance-email      # e qual token cada um recebe
+stat -c '%y' ~/.claude/.credentials.json         # mtime = último refresh bem-sucedido
+grep -i "authenticate\|401" ~/homewatch/state/agent.log | tail
+```
+
+Se for (A), religar:
+
+```bash
+claude          # dentro: /login   (ou claude setup-token, que não expira tão cedo)
+sudo systemctl restart homewatch-agent.service
+```
+
+---
+
+## 2. O que já foi implementado (commitado e pushado)
+
+`claude_auth.sh` (novo) — biblioteca sourceável + CLI:
+
+- `claude_auth_is_error <texto>` detecta o padrão do CLI (401 / `Failed to authenticate`
+  / `Invalid API key` / `Please run /login`). Ignora textos > 400 chars de propósito,
+  senão uma conversa *sobre* o erro seria confundida com o erro.
+- Marcador em `state/claude_auth_error_<escopo>`, por escopo, preservando o horário da
+  1ª falha.
+- CLI: `./claude_auth.sh status` · `check [usuário]` (probe real, gasta 1 request) · `clear`.
+
+Ligado em:
+
+- `telegram_agent.sh:661` — responde com instruções de `/login` e pula o retry inútil,
+  preservando a sessão. Resposta válida limpa o marcador.
+- `finance_handler.sh` / `kid_handler.sh` — mensagem compreensível para quem não
+  administra o Pi, em vez do erro em inglês.
+- `service_health.sh:156` — alerta no Telegram enquanto houver marcador. Sem probe
+  periódico (não gasta request por rodada). **Só escopo `rodrigor`** — ver seção 3.
+
+Testes: `bash tests/test_claude_auth.sh` (13 casos, passando). Não há CI no repo
+(`.github/workflows/` não existe), então é execução manual.
+
+---
+
+## 3. Achado grave: o coach de hábitos do Rodrigo está morto desde 07/08
+
+O commit `c9b82b8` (07/08) desativou o login do `pirraikid` — "as meninas não estão
+usando". Mas o `pirraikid` nunca foi só das meninas: é **sandbox** do coach de hábitos,
+que atende o próprio Rodrigo.
+
+`telegram_agent.sh:349` `process_habits()` varre `habits/*/`; na linha 360,
+`if [ "$P" = "Rodrigo" ]` manda pro chat dele. E daí saem:
+
+- **:374** revisão de domingo → `habit_analyze.sh:37` → `sudo -H -u pirraikid claude --model opus`
+- **:385** nudge de ritmo → `habit_coach.sh:34` → `sudo -H -u pirraikid claude --model sonnet`
+
+Com o login desativado, ambos retornam vazio e `[ -n "$msg" ] && tg ...` engole:
+sem mensagem, sem log, sem alerta.
+
+**Pior — o flag é gravado ANTES da chamada:** `:372` marca `last_review_week` e `:384`
+marca `last_pace_week`, e só depois chama o Claude. Cada domingo queima a revisão da
+semana e cada nudge queima o da semana, sem retry. Como `habit_analyze.sh` é também
+quem aplica `level_up` / `shrink_target` no JSON do hábito, **nenhuma adaptação foi
+aplicada em ~9 dias**.
+
+Continuou funcionando (e por isso não ficou óbvio): `habit_remind.sh` e
+`habit_weekly.sh` não usam Claude — mandam texto template via `tg_notify.sh`.
+
+### Decisão pendente
+
+Como os hábitos são do Rodrigo, "desativar o pirraikid" tem duas leituras:
+
+1. **Migrar `habit_coach.sh` e `habit_analyze.sh` para rodrigor** (tirar o
+   `sudo -H -u pirraikid`), como já foi feito com as newsletters em `c9b82b8`. Mantém a
+   funcionalidade, perde o sandbox — mas o conteúdo do prompt são os dados de hábito do
+   próprio Rodrigo, risco baixo.
+2. **Desativar junto** — perde nudges e revisão semanal até religar.
+
+Independente da escolha, considerar mover a gravação de `last_review_week` /
+`last_pace_week` para **depois** da chamada bem-sucedida, senão a falha silenciosa
+continua queimando a semana.
+
+### Já decidido nesta sessão
+
+- Watchdog: **tirar o escopo `pirraikid`** — feito (`service_health.sh`, via
+  `CLAUDE_AUTH_WATCH_SCOPES`, default `rodrigor`).
+- Meninas (`kid_handler.sh:63`, `kid_nudge.sh:26`, `email_watch.py:237`):
+  **remover as chamadas** que rodam claude como pirraikid. **AINDA NÃO FEITO.**
+
+---
+
+## 4. Fila de trabalho no Pi
+
+- [ ] Rodar o teste decisivo do 401 (mandar mensagem pro bot) e resolver (A) ou (B)
+- [ ] Decidir o destino do coach de hábitos (migrar × desativar)
+- [ ] Remover as chamadas pirraikid das meninas (kid_handler, kid_nudge, email_watch:237)
+- [ ] Mover os flags `last_review_week` / `last_pace_week` para depois da chamada
+- [ ] Estender a detecção de auth aos scripts não-interativos, que hoje engolem o erro
+      em silêncio: `vivo_watch.sh`, `apple_keynote_watch.sh`, `renewal_watch.sh`,
+      `parent_summary.sh`, `report.sh`, `copa_digest.sh`, `digest.py`, `finance_email.py`
+      (duas linhas cada, sourcing `claude_auth.sh`)
+- [ ] Tirar o PR #1 de draft quando estiver validado no Pi

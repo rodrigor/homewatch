@@ -25,6 +25,12 @@ SRC_VIVO="${SPEEDTEST_SRC_VIVO:-192.168.54.61}"
 OOKLA="${SPEEDTEST_BIN:-/usr/local/bin/speedtest-ookla}"
 # URL do teste de CDN de fluxo único (25 MB da Cloudflare).
 CDN_URL="${SPEEDTEST_CDN_URL:-https://speed.cloudflare.com/__down?bytes=25000000}"
+# Faixas de IP público de cada operadora (prefixos, separados por espaço).
+# Servem para detectar FAILOVER: quando uma WAN cai, o ER605 manda a origem dela
+# pela outra WAN e o teste mede a operadora errada com o rótulo errado.
+# Se a operadora mudar de faixa, o script avisa "faixa desconhecida" — atualize aqui.
+WANIP_CLARO="${WANIP_CLARO:-187.64.}"
+WANIP_VIVO="${WANIP_VIVO:-177.158. 179.181. 179.224.}"
 
 pubip(){ curl -s --interface "$1" --max-time 12 https://api.ipify.org 2>/dev/null; }
 
@@ -43,11 +49,13 @@ CREATE TABLE IF NOT EXISTS speedtest (
   cdn_bps  REAL,             -- download de fluxo único contra CDN
   server   TEXT, pub_ip TEXT,
   ok       INTEGER,          -- 1 sucesso, 0 falha
+  wan_ok   INTEGER,          -- 1 saiu pela WAN certa, 0 failover, NULL indeterminado
   PRIMARY KEY (ts, wan)
 );
 SQL
 # migração p/ bancos criados antes da coluna cdn_bps
 sqlite3 "$DB" "ALTER TABLE speedtest ADD COLUMN cdn_bps REAL;" 2>/dev/null || true
+sqlite3 "$DB" "ALTER TABLE speedtest ADD COLUMN wan_ok INTEGER;" 2>/dev/null || true
 
 TS=$(date +%s)
 
@@ -100,5 +108,41 @@ PY
 # Testes sequenciais (não saturar as duas WANs ao mesmo tempo)
 run_one claro "$SRC_CLARO"
 run_one vivo  "$SRC_VIVO"
+
+# ── Validação da rodada: cada teste saiu mesmo pela WAN que diz o rótulo? ──────
+# Roda DEPOIS das duas medições porque a checagem mais confiável é comparar os
+# dois IPs entre si: iguais = as duas saíram pela mesma WAN.
+# wan_ok: 1 = WAN certa · 0 = failover (dado não comparável) · NULL = indeterminado
+match_prefix(){ # match_prefix <ip> <lista de prefixos>
+  local ip="$1"; shift
+  for pfx in $*; do case "$ip" in "$pfx"*) return 0;; esac; done
+  return 1
+}
+classify(){ # classify <wan> <ip-proprio> <ip-da-outra> -> imprime 1|0|NULL
+  local wan="$1" ip="$2" outro="$3" meus outros
+  [ -z "$ip" ] || [ "$ip" = "-" ] && { echo NULL; return; }
+  [ -n "$outro" ] && [ "$ip" = "$outro" ] && { echo 0; return; }   # mesma saída p/ os dois
+  if [ "$wan" = claro ]; then meus="$WANIP_CLARO"; outros="$WANIP_VIVO"
+                        else meus="$WANIP_VIVO";  outros="$WANIP_CLARO"; fi
+  match_prefix "$ip" "$meus"   && { echo 1; return; }
+  match_prefix "$ip" "$outros" && { echo 0; return; }
+  echo NULL
+}
+
+IP_CLARO=$(sqlite3 "$DB" "SELECT COALESCE(pub_ip,'') FROM speedtest WHERE ts=$TS AND wan='claro';")
+IP_VIVO=$( sqlite3 "$DB" "SELECT COALESCE(pub_ip,'') FROM speedtest WHERE ts=$TS AND wan='vivo';")
+OK_CLARO=$(classify claro "$IP_CLARO" "$IP_VIVO")
+OK_VIVO=$( classify vivo  "$IP_VIVO"  "$IP_CLARO")
+sqlite3 "$DB" "UPDATE speedtest SET wan_ok=$OK_CLARO WHERE ts=$TS AND wan='claro';
+               UPDATE speedtest SET wan_ok=$OK_VIVO  WHERE ts=$TS AND wan='vivo';"
+
+for pair in "claro:$OK_CLARO:$IP_CLARO" "vivo:$OK_VIVO:$IP_VIVO"; do
+  w="${pair%%:*}"; rest="${pair#*:}"; v="${rest%%:*}"; i="${rest#*:}"
+  case "$v" in
+    0)    echo "⚠️  $w: FAILOVER — saiu por $i, que não é a WAN da $w. Medição não vale p/ comparar." ;;
+    NULL) [ -n "$i" ] && [ "$i" != "-" ] &&
+            echo "⚠️  $w: IP $i fora das faixas conhecidas — confira se a operadora mudou de faixa (WANIP_$(echo $w | tr a-z A-Z) em routerwatch.env)." ;;
+  esac
+done
 
 chmod 640 "$DB" 2>/dev/null || true

@@ -1,0 +1,43 @@
+{
+  "_doc": "Envelope de governança do coach. É verificado NA APLICAÇÃO, não confiado ao coach: a lista de caminhos abaixo é comparada com o diff entre a estratégia corrente e a proposta. Caminho fora de 'aplica_sozinho' derruba a proposta inteira para 'pede_ok'.",
+
+  "aplica_sozinho": [
+    "criterio_sucesso.adesao.min",
+    "criterio_sucesso.resultado",
+    "horizonte.revisar_em",
+    "horizonte.dwell_min_semanas",
+    "gatilhos[].quando",
+    "gatilhos[].dias",
+    "gatilhos[].msg",
+    "mensagens.*",
+    "hipotese",
+    "observacao"
+  ],
+
+  "pede_ok": [
+    "gatilhos",
+    "coleta",
+    "recursos",
+    "estado",
+    "canal",
+    "gates"
+  ],
+
+  "limites": {
+    "mudancas_por_revisao": 2,
+    "delta_meta_max": 1,
+    "meta_min": 1,
+    "meta_max": 7,
+    "max_gatilhos": 4,
+    "janela_gatilho_horas": [5, 22],
+    "estrategias_falhadas_teto": 3,
+    "dwell_min_semanas": 2
+  },
+
+  "proibido": [
+    "aumentar a meta numa revisão em que a adesão ficou abaixo do critério",
+    "repetir uma decisão que já falhou sem evidência nova",
+    "criar recurso, script ou automação por conta própria (isso é pedido de capacidade)",
+    "qualquer medida coercitiva sem consentimento explícito registrado"
+  ]
+}
