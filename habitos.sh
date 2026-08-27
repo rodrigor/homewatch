@@ -4,7 +4,7 @@
 #
 #   habitos.sh log <habito> <valor|-> <unidade|-> ["nota"] [--data AAAA-MM-DD] [--m campo=valor]...
 #   habitos.sh falha <habito> [obstaculo] ["nota"] [--data ...]
-#   habitos.sh metrica <habito> <campo> <valor>       # medição declarada na spec
+#   habitos.sh medicao <habito> campo=valor [campo=valor ...]   # medição + parecer
 #   habitos.sh interpretar <habito> "<texto livre>"   # LLM -> métricas
 #   habitos.sh tick [--dry-run] [--agora "AAAA-MM-DD HH:MM"]   # roda a estratégia
 #   habitos.sh pausar <habito> [ate] [motivo] | retomar <habito>
@@ -14,6 +14,8 @@
 #   habitos.sh aplicar <habito>               # aprova a proposta pendente
 #   habitos.sh simular <habito> [--de DATA]   # replay sobre o histórico
 #   habitos.sh nota <habito> "<texto>"
+#   habitos.sh referencia <habito> "<item>" peso_g=150 proteina=4   # calibra estimativas
+#   habitos.sh referencias <habito>
 #   habitos.sh semana [habito]        # JSON cru (para o coach/dashboard)
 #   habitos.sh eventos [habito] [n]
 #   habitos.sh estrategia [habito]    # mostra a spec corrente
@@ -100,17 +102,32 @@ case "$cmd" in
     [ -n "${3:-}" ] && args+=(--nota "$3")
     "$REG" "${args[@]}" >/dev/null && echo "ok: falha registrada em $h${2:+ ($2)}" ;;
 
-  metrica) # medição (peso, exame, indicador) — declarada no bloco 'medicoes' da estratégia
-    h="${1:?uso: habitos.sh metrica <habito> <campo> <valor>}"; campo="${2:?campo}"; val="${3:?valor}"
-    d=$(spec_da_medicao "$h" "$campo")
-    [ -z "$d" ] && { echo "medição '$campo' não declarada na estratégia de $h (declaradas: $(medicoes_validas "$h"))" >&2; exit 1; }
-    IFS='|' read -r un cl ag es <<< "$d"
-    [ "$es" = "habito" ] && es="$h"
-    args=(metrica --habito "$h" --campo "$campo" --valor "$val" --classe "$cl"
-          --agregacao "$ag" --escopo "$es" --origem "${HABITOS_ORIGEM:-manual}")
-    [ -n "$un" ] && args+=(--unidade "$un")
-    mapfile -t df < <(data_flag); args+=(${df[@]+"${df[@]}"})
-    "$REG" "${args[@]}" >/dev/null && echo "ok: $campo=$val ${un} em $h" ;;
+  medicao|metrica) # medição declarada no bloco 'medicoes'; aceita VÁRIOS campos
+    # em lote (campo=valor campo=valor ...) para um relatório inteiro virar UM
+    # estímulo, e não um parecer por número.
+    h="${1:?uso: habitos.sh medicao <habito> campo=valor [campo=valor ...]}"; shift
+    [ $# -eq 0 ] && { echo "informe ao menos um campo=valor (declarados: $(medicoes_validas "$h"))" >&2; exit 1; }
+    gravados=(); escopo=""
+    for kv in "$@"; do
+      case "$kv" in *=*) ;; *) echo "esperado campo=valor, veio '$kv'" >&2; exit 1;; esac
+      campo="${kv%%=*}"; val="${kv#*=}"; val="${val/,/.}"
+      d=$(spec_da_medicao "$h" "$campo")
+      [ -z "$d" ] && { echo "medição '$campo' não declarada em $h (declaradas: $(medicoes_validas "$h"))" >&2; exit 1; }
+      IFS='|' read -r un cl ag es <<< "$d"
+      [ "$es" = "habito" ] && es="$h"
+      escopo="$es"
+      args=(metrica --habito "$h" --campo "$campo" --valor "$val" --classe "$cl"
+            --agregacao "$ag" --escopo "$es" --origem "${HABITOS_ORIGEM:-manual}")
+      [ -n "$un" ] && args+=(--unidade "$un")
+      mapfile -t df < <(data_flag); args+=(${df[@]+"${df[@]}"})
+      "$REG" "${args[@]}" >/dev/null || exit 1
+      gravados+=("$campo")
+    done
+    echo "ok: $(IFS=,; echo "${gravados[*]}") em $h"
+    # a métrica estimula os coaches interessados (inclusive de outros hábitos)
+    [ "${HABITOS_SEM_PARECER:-0}" = "1" ] || \
+      "$DIR/habitos/rotina.py" reagir --campos "$(IFS=,; echo "${gravados[*]}")" --escopo "$escopo" >/dev/null ;;
+
 
   status)
     h="${1:-}"
@@ -135,6 +152,26 @@ case "$cmd" in
     h="${1:?uso: habitos.sh interpretar <habito> \"<texto>\"}"; t="${2:?texto}"
     "$DIR/habitos/sensor.py" interpretar "$h" "$t" --aplicar \
       --origem "${HABITOS_ORIGEM:-telegram}" ${DATA:+--data "$DATA"} ;;
+  referencia) # calibra estimativas futuras com algo que a pessoa MEDIU de verdade
+    # ex.: habitos.sh referencia alimentacao "arroz cozido" peso_g=150 proteina=4
+    h="${1:?uso: habitos.sh referencia <habito> \"<item>\" chave=valor ...}"; item="${2:?item}"; shift 2
+    [ $# -eq 0 ] && { echo "informe ao menos uma medida (ex.: peso_g=150 proteina=4)" >&2; exit 1; }
+    pay=$(jq -nc --arg i "$item" '{item:$i, medidas:{}}')
+    for kv in "$@"; do
+      case "$kv" in *=*) ;; *) echo "esperado chave=valor, veio '$kv'" >&2; exit 1;; esac
+      v="${kv#*=}"; v="${v/,/.}"
+      pay=$(printf '%s' "$pay" | jq -c --arg k "${kv%%=*}" --arg v "$v" \
+              '.medidas[$k] = ($v|tonumber? // $v)')
+    done
+    "$REG" evento --habito "$h" --tipo referencia --origem "${HABITOS_ORIGEM:-manual}" \
+      --payload "$pay" >/dev/null && echo "ok: referência '$item' guardada em $h" ;;
+
+  referencias) # o que já foi medido de verdade (consulte ANTES de estimar)
+    h="${1:?uso: habitos.sh referencias <habito>}"
+    "$REG" eventos --habito "$h" --tipo referencia --n "${2:-60}" \
+      | jq -r '.[]|(.payload|fromjson)|select(.item)|"\(.item)\t\(.medidas|to_entries|map("\(.key)=\(.value)")|join(" "))"' \
+      | sort -u ;;
+
   nota) # contexto em texto livre (resposta a uma pergunta do coach, observação)
     h="${1:?habito}"; t="${2:?texto}"
     "$REG" evento --habito "$h" --tipo nota --origem "${HABITOS_ORIGEM:-manual}" \

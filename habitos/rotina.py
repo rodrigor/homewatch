@@ -257,6 +257,104 @@ def cmd_tick(a, con):
     return resumo
 
 
+# ── parecer: a métrica estimula quem se interessa por ela ────────────────────
+def valor_anterior(con, escopo, campo, antes_de_id):
+    r = con.execute("""SELECT valor_num, data, unidade FROM metricas
+                       WHERE escopo=? AND campo=? AND id < ? AND valor_num IS NOT NULL
+                       ORDER BY id DESC LIMIT 1""", (escopo, campo, antes_de_id)).fetchone()
+    return dict(r) if r else None
+
+
+def contexto_parecer(con, spec, campos, escopo):
+    """O que este coach precisa saber para opinar: o que mudou, quanto mudou, e
+    o que isso significa PARA ELE (o mesmo peso é resultado de um coach e
+    secundário de outro)."""
+    import coach as C
+    novidades = []
+    for campo in campos:
+        atual = con.execute("""SELECT id, valor_num, unidade, data FROM metricas
+                               WHERE escopo=? AND campo=? AND valor_num IS NOT NULL
+                               ORDER BY id DESC LIMIT 1""", (escopo, campo)).fetchone()
+        if not atual:
+            continue
+        ant = valor_anterior(con, escopo, campo, atual["id"])
+        novidades.append({
+            "campo": campo, "papel": E.papel_do_campo(spec, campo),
+            "valor": atual["valor_num"], "unidade": atual["unidade"],
+            "anterior": ant["valor_num"] if ant else None,
+            "desde": ant["data"] if ant else None,
+            "variacao": (round(atual["valor_num"] - ant["valor_num"], 3) if ant else None),
+        })
+    return {"novidades": novidades, "medicao": C.medir(con, spec),
+            "objetivo": spec.get("objetivo"),
+            "criterio": spec.get("criterio_sucesso")}
+
+
+def pareceres_do_dia(con, habito, dia):
+    return con.execute("""SELECT COUNT(*) FROM eventos WHERE habito=? AND data=?
+                          AND tipo='parecer'""", (habito, dia)).fetchone()[0]
+
+
+def emitir_parecer(con, spec, campos, escopo, dry=False):
+    habito, dia = spec["habito"], R.hoje()
+    limite = int((spec.get("parecer") or {}).get("max_por_dia", 2))
+    if pareceres_do_dia(con, habito, dia) >= limite:
+        return None
+    ctx = contexto_parecer(con, spec, campos, escopo)
+    if not ctx["novidades"]:
+        return None
+    prompt = f"""Você é o coach do hábito "{spec.get('nome') or habito}". Acabou de chegar
+dado novo que te interessa. Dê um PARECER curto — não é revisão de estratégia.
+
+DADOS (já apurados; não recalcule):
+{json.dumps(ctx, ensure_ascii=False, indent=2, default=str)}
+
+Regras:
+- 1 a 3 frases. Tom: {spec['mensagens'].get('tom', 'parceiro, direto')}. Máx 1 emoji.
+- Cite os NÚMEROS que chegaram e o que eles significam PARA ESTE HÁBITO (veja 'papel':
+  'resultado' é o que te julga; 'secundario' você acompanha mas não controla; 'medicao'
+  e 'coleta' são insumo).
+- Se o papel for 'secundario', deixe claro que é acompanhamento — não puxe para si o
+  mérito nem a culpa do que outro hábito controla.
+- NÃO proponha mudança de meta, gatilho ou estratégia: isso é da revisão, que tem data.
+  Se algo parecer urgente, diga em uma frase que vale antecipar a revisão.
+- Sem sermão, sem culpa, sem plano de ação genérico. HTML do Telegram (<b>/<i>).
+Responda só a mensagem."""
+    txt, err = llm.perguntar(prompt, origem=f"parecer/{habito}", timeout=120)
+    if err:
+        print(f"parecer de {habito} indisponível: {err}", file=sys.stderr)
+        return None
+    msg = E.assinar(spec, txt)
+    if dry:
+        print(f"[dry-run] parecer {habito}: {msg}")
+        return msg
+    if enviar(spec.get("canal", "telegram_admin"), msg):
+        R.grava_evento(con, habito, "parecer", "coach", dia,
+                       {"campos": campos, "escopo": escopo, "texto": msg})
+        con.commit()
+    return msg
+
+
+def cmd_reagir(a, con):
+    """Estimula os coaches interessados nos campos que acabaram de mudar."""
+    campos = [c for c in a.campos.split(",") if c]
+    saida = {"campos": campos, "pareceres": []}
+    # um parecer por coach, cobrindo todos os campos que interessam a ele — não
+    # um parecer por campo (um relatório de balança com 11 números viraria 11
+    # mensagens)
+    porhabito = {}
+    for campo in campos:
+        for hid, spec, papel in E.interessados(campo, a.escopo):
+            porhabito.setdefault(hid, (spec, []))[1].append(campo)
+    for hid, (spec, cs) in porhabito.items():
+        if pausado(con, hid, R.hoje()):
+            continue
+        msg = emitir_parecer(con, spec, cs, a.escopo, a.dry_run)
+        saida["pareceres"].append({"habito": hid, "campos": cs,
+                                   "emitido": bool(msg), "texto": msg})
+    return saida
+
+
 def cmd_pausar(a, con):
     R.grava_evento(con, a.habito, "pausa_inicio", "manual", R.hoje(),
                    {"ate": a.ate, "motivo": a.motivo})
@@ -275,12 +373,14 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("tick"); sp.add_argument("--dry-run", action="store_true")
     sp.add_argument("--agora"); sp.add_argument("--habito")
+    sp = sub.add_parser("reagir"); sp.add_argument("--campos", required=True)
+    sp.add_argument("--escopo", required=True); sp.add_argument("--dry-run", action="store_true")
     sp = sub.add_parser("pausar"); sp.add_argument("habito")
     sp.add_argument("--ate"); sp.add_argument("--motivo", default="")
     sp = sub.add_parser("retomar"); sp.add_argument("habito")
     a = p.parse_args()
     con = R.conectar()
-    print(json.dumps({"tick": cmd_tick, "pausar": cmd_pausar,
+    print(json.dumps({"tick": cmd_tick, "reagir": cmd_reagir, "pausar": cmd_pausar,
                       "retomar": cmd_retomar}[a.cmd](a, con),
                      ensure_ascii=False, indent=2))
 

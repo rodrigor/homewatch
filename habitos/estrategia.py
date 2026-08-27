@@ -78,6 +78,52 @@ def escopo_de(spec, campo):
     return spec["habito"]
 
 
+def campos_declarados(spec):
+    """Todo campo que a estratégia conhece, com o escopo em que ele é lido."""
+    out = {}
+    for bloco in ("coleta", "medicoes", "derivadas"):
+        for item in spec.get(bloco, []) or []:
+            if item.get("campo"):
+                out[item["campo"]] = escopo_de(spec, item["campo"])
+    return out
+
+
+def papel_do_campo(spec, campo):
+    """Que peso este campo tem para esta estratégia: é o que a julga, o que ela
+    só acompanha, a dose que ela coleta, ou nada disso."""
+    cs = spec.get("criterio_sucesso", {})
+    if (cs.get("resultado") or {}).get("metrica") == campo:
+        return "resultado"
+    if any((s or {}).get("metrica") == campo for s in cs.get("secundarios", []) or []):
+        return "secundario"
+    for bloco, papel in (("coleta", "coleta"), ("derivadas", "derivada"),
+                         ("medicoes", "medicao")):
+        if any(i.get("campo") == campo for i in spec.get(bloco, []) or []):
+            return papel
+    return None
+
+
+def interessados(campo, escopo, so_ativos=True):
+    """Estratégias que se importam com esta métrica, neste escopo.
+
+    É o que permite uma medição ESTIMULAR os coaches: quem declarou o campo
+    recebe o aviso, e quem não declarou nem fica sabendo. Uma métrica de escopo
+    'pessoa' pode acordar vários coaches; uma métrica do hábito, só o dele.
+    """
+    out = []
+    for hid in listar():
+        try:
+            spec = carregar(hid)
+        except Invalida:
+            continue
+        if so_ativos and spec.get("estado") != "ativo":
+            continue
+        if campos_declarados(spec).get(campo) != escopo:
+            continue
+        out.append((hid, spec, papel_do_campo(spec, campo)))
+    return out
+
+
 def caminho(habito):
     return os.path.join(EST, f"{habito}.json")
 

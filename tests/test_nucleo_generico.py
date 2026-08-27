@@ -42,3 +42,34 @@ class NucleoGenerico(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InteresseEmMetrica(unittest.TestCase):
+    """Quem é estimulado por uma métrica sai da declaração, não de código."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(RAIZ, "habitos"))
+        import estrategia
+        self.E = estrategia
+
+    def spec(self, hid, campos_pessoa=(), campos_habito=(), resultado=None, secundario=None):
+        return {
+            "habito": hid, "estado": "ativo",
+            "medicoes": [{"campo": c, "escopo": "pessoa"} for c in campos_pessoa],
+            "coleta": [{"campo": c} for c in campos_habito],
+            "criterio_sucesso": {"adesao": {"min": 1},
+                                 "resultado": {"metrica": resultado} if resultado else None,
+                                 "secundarios": ([{"metrica": secundario}] if secundario else [])},
+        }
+
+    def test_papel_do_campo(self):
+        s = self.spec("h", campos_pessoa=["compartilhada"], campos_habito=["propria"],
+                      resultado="propria", secundario="compartilhada")
+        self.assertEqual(self.E.papel_do_campo(s, "propria"), "resultado")
+        self.assertEqual(self.E.papel_do_campo(s, "compartilhada"), "secundario")
+        self.assertIsNone(self.E.papel_do_campo(s, "inexistente"))
+
+    def test_escopo_separa_quem_ve(self):
+        s = self.spec("h", campos_pessoa=["compartilhada"], campos_habito=["propria"])
+        self.assertEqual(self.E.campos_declarados(s),
+                         {"compartilhada": "pessoa", "propria": "h"})
