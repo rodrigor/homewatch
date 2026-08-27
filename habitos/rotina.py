@@ -125,6 +125,33 @@ def medido_recentemente(con, habito, campo, dia, cada_dias):
             - datetime.strptime(ultima, "%Y-%m-%d")).days < int(cada_dias)
 
 
+def horario_aprendido(con, habito, g):
+    """Mediana do horário em que a pessoa REALMENTE registra, das últimas N vezes.
+
+    Mediana e não média: um registro perdido às 23h desloca a média e não a
+    mediana. Enquanto não houver amostras suficientes, vale quando_padrao — e o
+    gatilho vai se mudando sozinho conforme a rotina da pessoa muda, sem
+    ninguém precisar editar a estratégia.
+    """
+    n = int(g.get("amostras", 10))
+    tipos = g.get("aprende_de", "sessao")
+    linhas = con.execute(
+        """SELECT ts FROM eventos WHERE habito=? AND tipo=? AND origem != 'rotina'
+           ORDER BY id DESC LIMIT ?""", (habito, tipos, n)).fetchall()
+    marcas = []          # minuto do dia de cada registro (0..1439)
+    for r in linhas:
+        try:
+            t = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        marcas.append(t.hour * 60 + t.minute)
+    if len(marcas) < int(g.get("minimo_amostras", 3)):
+        return g.get("quando_padrao"), len(marcas)
+    marcas.sort()
+    meio = marcas[len(marcas) // 2]
+    return f"{meio // 60:02d}:{meio % 60:02d}", len(marcas)
+
+
 def processar_gatilhos(con, spec, agora, dry):
     habito, dia = spec["habito"], agora.date().isoformat()
     enviados = 0
@@ -148,7 +175,12 @@ def processar_gatilhos(con, spec, agora, dry):
             continue
         if agora.isoweekday() not in (g.get("dias") or []):
             continue
-        hh, mm = (int(x) for x in g["quando"].split(":"))
+        quando = g["quando"]
+        if quando == "auto":
+            quando, amostras = horario_aprendido(con, habito, g)
+            if not quando:
+                continue
+        hh, mm = (int(x) for x in quando.split(":"))
         alvo = agora.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if abs((agora - alvo).total_seconds()) > TOLERANCIA_MIN * 60:
             continue
@@ -163,7 +195,9 @@ def processar_gatilhos(con, spec, agora, dry):
             if not dry:
                 R.grava_evento(con, habito, "lembrete", "rotina", dia,
                                {"gatilho": i, "msg": g.get("msg"), "texto": texto,
-                                "para": alvo, "hora": agora.strftime("%H:%M")})
+                                "para": alvo, "hora": agora.strftime("%H:%M"),
+                                "horario_usado": quando,
+                                "aprendido": g["quando"] == "auto"})
                 con.commit()
     return enviados
 

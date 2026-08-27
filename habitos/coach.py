@@ -69,9 +69,11 @@ def medir(con, spec, ate=None, desde=None):
     resultado, serie_res, ritmo = None, [], None
     if res_spec and semanas:
         campo = res_spec["metrica"]
+        # escopo: métrica da pessoa (peso) é lida fora do hábito
+        esc = E.escopo_de(spec, campo)
         vals = {r["semana"]: r["valor"] for r in con.execute(
-            "SELECT semana, valor FROM v_metricas_semanais WHERE habito=? AND campo=?",
-            (habito, campo))}
+            "SELECT semana, valor FROM v_metricas_semanais WHERE escopo=? AND campo=?",
+            (esc, campo))}
         serie_res = [{"semana": s, "valor": vals.get(s)} for s in semanas]
         medidos = [x for x in serie_res if x["valor"] is not None]
 

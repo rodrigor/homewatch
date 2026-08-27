@@ -43,27 +43,28 @@ campo_por_unidade(){ # <habito> <unidade> -> nome do campo (ou vazio)
   jq -r --arg u "$2" '[.coleta[]|select((.quando//"")!="falha" and .unidade==$u)|.campo][0] // empty' \
     "$EST/$1.json" 2>/dev/null
 }
-spec_do_campo(){ # <habito> <campo> -> "unidade:classe:agregacao" (vazio se não declarado)
+spec_do_campo(){ # <habito> <campo> -> "unidade|classe|agregacao|escopo" (vazio se não declarado)
   jq -r --arg c "$2" '.coleta[]|select(.campo==$c)|
-      "\(.unidade // "")|\(.classe // (if .obrigatorio then "resultado" else "contexto" end))|\(.agregacao // "soma")"' \
+      "\(.unidade // "")|\(.classe // (if .obrigatorio then "resultado" else "contexto" end))|\(.agregacao // "soma")|\(.escopo // "habito")"' \
     "$EST/$1.json" 2>/dev/null | head -1
 }
 campos_validos(){ jq -r '[.coleta[]|select((.quando//"")!="falha")|
       "\(.campo)\(if .unidade then " ("+.unidade+")" else "" end)"]|join(", ")' "$EST/$1.json" 2>/dev/null; }
 
-spec_da_medicao(){ # <habito> <campo> -> "unidade|classe|agregacao" (bloco medicoes)
+spec_da_medicao(){ # <habito> <campo> -> "unidade|classe|agregacao|escopo"
   jq -r --arg c "$2" '(.medicoes // [])[]|select(.campo==$c)|
-      "\(.unidade // "")|\(.classe // "resultado")|\(.agregacao // "ultimo")"' \
+      "\(.unidade // "")|\(.classe // "resultado")|\(.agregacao // "ultimo")|\(.escopo // "habito")"' \
     "$EST/$1.json" 2>/dev/null | head -1
 }
 medicoes_validas(){ jq -r '[(.medicoes // [])[]|
       "\(.campo)\(if .unidade then " ("+.unidade+")" else "" end)"]|join(", ")' "$EST/$1.json" 2>/dev/null; }
 
-metrica_arg(){ # <habito> <campo> <valor> -> "campo=valor:unidade:classe:agregacao"
+metrica_arg(){ # <habito> <campo> <valor> -> "campo=valor:unidade:classe:agregacao:escopo"
   local d; d=$(spec_do_campo "$1" "$2")
   [ -z "$d" ] && { echo "campo '$2' não existe na estratégia de $1 (declarados: $(campos_validos "$1"))" >&2; return 1; }
-  IFS='|' read -r un cl ag <<< "$d"
-  printf '%s=%s:%s:%s:%s' "$2" "$3" "$un" "$cl" "$ag"
+  IFS='|' read -r un cl ag es <<< "$d"
+  [ "$es" = "habito" ] && es="$1"
+  printf '%s=%s:%s:%s:%s:%s' "$2" "$3" "$un" "$cl" "$ag" "$es"
 }
 
 meta_de(){ # meta de adesão declarada na estratégia corrente (só para exibir)
@@ -103,9 +104,10 @@ case "$cmd" in
     h="${1:?uso: habitos.sh metrica <habito> <campo> <valor>}"; campo="${2:?campo}"; val="${3:?valor}"
     d=$(spec_da_medicao "$h" "$campo")
     [ -z "$d" ] && { echo "medição '$campo' não declarada na estratégia de $h (declaradas: $(medicoes_validas "$h"))" >&2; exit 1; }
-    IFS='|' read -r un cl ag <<< "$d"
+    IFS='|' read -r un cl ag es <<< "$d"
+    [ "$es" = "habito" ] && es="$h"
     args=(metrica --habito "$h" --campo "$campo" --valor "$val" --classe "$cl"
-          --agregacao "$ag" --origem "${HABITOS_ORIGEM:-manual}")
+          --agregacao "$ag" --escopo "$es" --origem "${HABITOS_ORIGEM:-manual}")
     [ -n "$un" ] && args+=(--unidade "$un")
     mapfile -t df < <(data_flag); args+=(${df[@]+"${df[@]}"})
     "$REG" "${args[@]}" >/dev/null && echo "ok: $campo=$val ${un} em $h" ;;

@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS metricas (
   valor_txt TEXT,
   unidade   TEXT,
   classe    TEXT NOT NULL DEFAULT 'contexto',
+  -- ESCOPO de leitura. Por padrão a métrica pertence ao hábito que a registrou,
+  -- mas algumas são da PESSOA: dois hábitos diferentes podem perseguir o mesmo
+  -- indicador, e cada um precisa lê-lo. Sem isto a alternativa seria duplicar o
+  -- dado ou fazer um coach espiar o hábito do outro.
+  escopo    TEXT NOT NULL DEFAULT 'habito',
   -- como a métrica se agrega no tempo. Sem isto, a view somava ao longo da
   -- semana uma medição que é ponto no tempo (87 + 87 = 174): dose se soma,
   -- medição não.
@@ -45,7 +50,8 @@ CREATE TABLE IF NOT EXISTS metricas (
   fonte     TEXT NOT NULL,
   evento_id INTEGER REFERENCES eventos(id)
 );
-CREATE INDEX IF NOT EXISTS ix_metricas_campo ON metricas(habito, campo, data);
+CREATE INDEX IF NOT EXISTS ix_metricas_campo  ON metricas(habito, campo, data);
+CREATE INDEX IF NOT EXISTS ix_metricas_escopo ON metricas(escopo, campo, data);
 
 -- O arquivo em habitos/estrategias/ é a fonte de verdade da estratégia; esta
 -- tabela é a LINHA DO TEMPO (que versão estava no ar quando), para dar join com
@@ -100,22 +106,25 @@ CREATE VIEW v_sessoes_semanais AS
 
 DROP VIEW IF EXISTS v_metricas_semanais;
 CREATE VIEW v_metricas_semanais AS
-  SELECT m.habito, m.semana, m.campo, m.unidade, m.classe, m.agregacao,
+  SELECT m.escopo, m.habito, m.semana, m.campo, m.unidade, m.classe, m.agregacao,
          SUM(m.valor_num) AS soma, AVG(m.valor_num) AS media, COUNT(*) AS n,
          (SELECT m2.valor_num FROM v_metricas m2
-           WHERE m2.habito = m.habito AND m2.campo = m.campo AND m2.semana = m.semana
+           WHERE m2.escopo = m.escopo AND m2.campo = m.campo AND m2.semana = m.semana
              AND m2.valor_num IS NOT NULL
            ORDER BY m2.data DESC, m2.id DESC LIMIT 1) AS ultimo,
          -- o valor que vale para esta métrica, já escolhido pela agregação
          CASE m.agregacao
            WHEN 'media'  THEN AVG(m.valor_num)
+           -- média por DIA com registro (não por dia da semana): é o que vale
+           -- para dose diária, onde somar a semana inteira não diz nada
+           WHEN 'media_dia' THEN SUM(m.valor_num) * 1.0 / COUNT(DISTINCT m.data)
            WHEN 'ultimo' THEN (SELECT m2.valor_num FROM v_metricas m2
-                                WHERE m2.habito = m.habito AND m2.campo = m.campo
+                                WHERE m2.escopo = m.escopo AND m2.campo = m.campo
                                   AND m2.semana = m.semana AND m2.valor_num IS NOT NULL
                                 ORDER BY m2.data DESC, m2.id DESC LIMIT 1)
            ELSE SUM(m.valor_num) END AS valor
   FROM v_metricas m WHERE m.valor_num IS NOT NULL
-  GROUP BY m.habito, m.semana, m.campo, m.unidade, m.classe, m.agregacao;
+  GROUP BY m.escopo, m.habito, m.semana, m.campo, m.unidade, m.classe, m.agregacao;
 
 -- A distribuição de obstáculos é o que separa "reduzir a meta" de "trocar o
 -- gatilho". Silêncio NÃO entra aqui: silêncio é desconhecido, não é falha.

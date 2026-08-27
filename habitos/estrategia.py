@@ -35,7 +35,11 @@ ALVOS_GATILHO = {"sessao", "medicao"}
 # virar código aqui dentro.
 OPERADORES = {"entre", "min", "max", "igual"}
 ESTADOS = {"ativo", "pausado", "suspenso"}
-AGREGACOES = {"soma", "media", "ultimo"}
+AGREGACOES = {"soma", "media", "media_dia", "ultimo"}
+# "pessoa" = métrica que não pertence a um hábito e sim a quem o pratica, e por
+# isso pode ser lida por mais de um coach ao mesmo tempo. (Multi-pessoa, quando
+# existir, vira "pessoa:<nome>".)
+ESCOPOS = {"habito", "pessoa"}
 # Primitivas que a rotina sabe executar. Estratégia que peça outra coisa é
 # recusada na validação — é assim que o coach fica preso a mexer em parâmetros.
 CAMPOS_OBRIGATORIOS = {"habito", "versao", "estado", "criterio_sucesso",
@@ -63,6 +67,15 @@ def assinar(spec, texto):
     texto = (texto or "").strip()
     cabecalho = f"{emoji} <b>Coach: {nome}</b>"
     return texto if texto.startswith(emoji) else f"{cabecalho}\n\n{texto}"
+
+
+def escopo_de(spec, campo):
+    """Em que escopo esta métrica é lida/gravada: o hábito ou a pessoa."""
+    for bloco in ("medicoes", "coleta", "derivadas"):
+        for item in spec.get(bloco, []) or []:
+            if item.get("campo") == campo:
+                return "pessoa" if item.get("escopo") == "pessoa" else spec["habito"]
+    return spec["habito"]
 
 
 def caminho(habito):
@@ -119,6 +132,10 @@ def validar(spec):
                            f"não é coletada, medida nem derivada. Declarar uma métrica nova "
                            f"é pedido de capacidade, não decisão do coach.")
 
+    for m in spec.get("medicoes", []) + spec.get("coleta", []) + spec.get("derivadas", []):
+        if m.get("escopo", "habito") not in ESCOPOS:
+            raise Invalida(f"escopo inválido em {m.get('campo')}: {m['escopo']} "
+                           f"(use {sorted(ESCOPOS)})")
     for m in spec.get("medicoes", []):
         if "campo" not in m:
             raise Invalida(f"medição sem campo: {m}")
@@ -167,11 +184,23 @@ def validar(spec):
             raise Invalida(f"gatilho de tipo desconhecido: {g.get('tipo')} "
                            f"(a rotina só sabe {sorted(TIPOS_GATILHO)})")
         if g["tipo"] == "horario":
-            try:
-                hh, mm = g["quando"].split(":")
-                assert 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
-            except Exception:
-                raise Invalida(f"gatilho.quando inválido: {g.get('quando')}")
+            if g.get("quando") == "auto":
+                # gatilho aprendido: o horário sai do histórico de registros, e
+                # 'quando_padrao' é o que vale enquanto não há amostra suficiente
+                try:
+                    hh, mm = g.get("quando_padrao", "").split(":")
+                    assert 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
+                except Exception:
+                    raise Invalida("gatilho com quando=auto precisa de quando_padrao "
+                                   "válido (o que fazer enquanto não aprendeu)")
+                if int(g.get("minimo_amostras", 0)) < 2:
+                    raise Invalida("gatilho aprendido precisa de minimo_amostras >= 2")
+            else:
+                try:
+                    hh, mm = g["quando"].split(":")
+                    assert 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
+                except Exception:
+                    raise Invalida(f"gatilho.quando inválido: {g.get('quando')}")
             dias = g.get("dias") or []
             if not dias or any(d not in range(1, 8) for d in dias):
                 raise Invalida("gatilho.dias deve ser lista de 1..7 (1=segunda)")

@@ -72,9 +72,22 @@ def api_resumo():
             continue
         sess = {r["semana"]: r["sessoes"] for r in con.execute(
             "SELECT semana, sessoes FROM v_sessoes_semanais WHERE habito=?", (hid,))}
+        # o painel mostra o que a ESTRATÉGIA declara, no escopo de cada campo:
+        # métrica de escopo 'pessoa' é lida fora do hábito (e pode aparecer em
+        # mais de um coach ao mesmo tempo)
+        declarados = [(c["campo"], E.escopo_de(spec, c["campo"]))
+                      for bloco in ("coleta", "medicoes", "derivadas")
+                      for c in (spec.get(bloco) or []) if c.get("campo")]
         mets = {}
-        for r in con.execute("""SELECT semana, campo, unidade, valor, agregacao, classe
-                                FROM v_metricas_semanais WHERE habito=?""", (hid,)):
+        if declarados:
+            marks = ",".join("(?,?)" for _ in declarados)
+            args = [x for par in declarados for x in par]
+            consulta = f"""SELECT semana, campo, unidade, valor, agregacao, classe
+                           FROM v_metricas_semanais WHERE (campo, escopo) IN ({marks})"""
+        else:
+            consulta, args = """SELECT semana, campo, unidade, valor, agregacao, classe
+                                FROM v_metricas_semanais WHERE habito=?""", [hid]
+        for r in con.execute(consulta, args):
             mets.setdefault(r["campo"], {"unidade": r["unidade"], "agregacao": r["agregacao"],
                                          "classe": r["classe"], "valores": {}})
             mets[r["campo"]]["valores"][r["semana"]] = r["valor"]

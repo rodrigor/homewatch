@@ -80,7 +80,7 @@ def grava_evento(con, habito, tipo, origem, data=None, payload=None, ts=None):
 
 def grava_metrica(con, habito, campo, valor, unidade=None, classe="contexto",
                   fonte="manual", data=None, evento_id=None, ts=None,
-                  agregacao="soma"):
+                  agregacao="soma", escopo=None):
     data = valida_data(data or hoje())
     num, txt = None, None
     try:
@@ -89,10 +89,10 @@ def grava_metrica(con, habito, campo, valor, unidade=None, classe="contexto",
         txt = str(valor)
     cur = con.execute(
         """INSERT INTO metricas (ts, data, habito, campo, valor_num, valor_txt,
-                                 unidade, classe, agregacao, fonte, evento_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                 unidade, classe, agregacao, escopo, fonte, evento_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (ts or agora(), data, habito, campo, num, txt, unidade, classe, agregacao,
-         fonte, evento_id))
+         escopo or habito, fonte, evento_id))
     return cur.lastrowid
 
 
@@ -133,7 +133,7 @@ def aplicar_derivadas(con, spec, habito, data, evento_id, valores, fonte="deriva
         criadas.append(grava_metrica(
             con, habito, d["campo"], base, d.get("unidade"),
             d.get("classe", "resultado"), fonte, data, evento_id,
-            agregacao=d.get("agregacao", "soma")))
+            agregacao=d.get("agregacao", "soma"), escopo=d.get("escopo")))
     return criadas
 
 
@@ -148,7 +148,8 @@ def parse_metricas(itens):
         out.append({"campo": campo, "valor": partes[0],
                     "unidade": partes[1] if len(partes) > 1 and partes[1] else None,
                     "classe": partes[2] if len(partes) > 2 and partes[2] else "contexto",
-                    "agregacao": partes[3] if len(partes) > 3 and partes[3] else "soma"})
+                    "agregacao": partes[3] if len(partes) > 3 and partes[3] else "soma",
+                    "escopo": partes[4] if len(partes) > 4 and partes[4] else None})
     return out
 
 
@@ -159,7 +160,8 @@ def cmd_sessao(a, con):
         payload.update(json.loads(a.payload))
     eid = grava_evento(con, a.habito, "sessao", a.origem, a.data, payload)
     ids = [grava_metrica(con, a.habito, m["campo"], m["valor"], m["unidade"],
-                         m["classe"], a.origem, a.data, eid, agregacao=m["agregacao"])
+                         m["classe"], a.origem, a.data, eid, agregacao=m["agregacao"],
+                         escopo=m["escopo"])
            for m in metricas]
     derivadas = []
     spec = carregar_spec(a.habito)
@@ -198,7 +200,7 @@ def cmd_evento(a, con):
 
 def cmd_metrica(a, con):
     mid = grava_metrica(con, a.habito, a.campo, a.valor, a.unidade, a.classe,
-                        a.origem, a.data, agregacao=a.agregacao)
+                        a.origem, a.data, agregacao=a.agregacao, escopo=a.escopo)
     con.commit()
     return {"metrica": mid}
 
@@ -317,7 +319,9 @@ def main():
     sp = sub.add_parser("metrica", help="métrica solta, fora de uma sessão")
     comum(sp); sp.add_argument("--campo", required=True); sp.add_argument("--valor", required=True)
     sp.add_argument("--unidade"); sp.add_argument("--classe", default="contexto")
-    sp.add_argument("--agregacao", default="soma", choices=["soma", "media", "ultimo"])
+    sp.add_argument("--agregacao", default="soma",
+                    choices=["soma", "media", "media_dia", "ultimo"])
+    sp.add_argument("--escopo")
 
     sp = sub.add_parser("semana", help="resumo semanal"); sp.add_argument("--habito")
     sp.add_argument("--n", type=int, default=12)
