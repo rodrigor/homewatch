@@ -346,50 +346,6 @@ process_screen_nudges(){ # nudge de bem-estar p/ as filhas (uso contínuo), na p
   done
 }
 
-process_habits(){ # coach de hábitos: ritmo da semana + revisão de domingo + adaptação autônoma
-  local today dow mon hour last pdir P cid f target cnt lastrev lastnudge missstreak cue strk msg need daysleft behind nt change
-  today=$(date +%Y-%m-%d); dow=$(date +%u); mon=$(date -d "-$((dow-1)) days" +%Y-%m-%d); hour=$(date +%H)
-  { [ "$hour" -lt 9 ] || [ "$hour" -ge 22 ]; } && return
-  last=$(cat "$STATE/habit_last_day" 2>/dev/null || echo "")
-  [ "$last" = "$today" ] && return
-  echo "$today" > "$STATE/habit_last_day"
-  [ -d "$DIR/habits" ] || return
-  for pdir in "$DIR/habits"/*; do
-    [ -d "$pdir" ] || continue
-    P=$(basename "$pdir")
-    if [ "$P" = "Rodrigo" ]; then cid="${TELEGRAM_CHAT_ID:-}"
-    else cid=$(kid_chat_id "$P"); fi
-    [ -z "$cid" ] && continue
-    for f in "$pdir"/*.json; do
-      [ -f "$f" ] || continue
-      [ "$(jq -r .status "$f")" = active ] || continue
-      [ "$(jq -r .type "$f")" = weekly_count ] || continue
-      target=$(jq -r .target_per_week "$f")
-      cnt=$(jq --arg m "$mon" '[.log[]|select(.done and (.date>=$m))]|length' "$f")
-      if [ "$dow" = "7" ]; then
-        lastrev=$(jq -r '.last_review_week // ""' "$f")
-        [ "$lastrev" = "$mon" ] && continue
-        jq --arg m "$mon" '.last_review_week=$m' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-        met=0; [ "$cnt" -ge "$target" ] && met=1
-        msg=$("$DIR/habit_analyze.sh" "$P" "$f" "$cnt" "$target" "$met")   # análise resultados+estratégia com OPUS
-        [ -n "$msg" ] && tg "$cid" "$msg"
-      else
-        lastnudge=$(jq -r '.last_pace_week // ""' "$f")
-        [ "$lastnudge" = "$mon" ] && continue
-        [ "$cnt" -ge "$target" ] && continue
-        need=$((target-cnt)); daysleft=$((7-dow)); behind=0
-        [ "$need" -gt "$daysleft" ] && behind=1
-        { [ "$cnt" -eq 0 ] && [ "$dow" -ge 4 ]; } && behind=1
-        if [ "$dow" -ge 3 ] && [ "$behind" = "1" ]; then
-          jq --arg m "$mon" '.last_pace_week=$m' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-          msg=$("$DIR/habit_coach.sh" "$P" "$f" pace "$cnt de $target, faltam $daysleft dias")
-          [ -n "$msg" ] && tg "$cid" "$msg"
-        fi
-      fi
-    done
-  done
-}
-
 # Reações do Telegram (message_reaction) só chegam se pedidas explicitamente
 # em allowed_updates — por padrão a API não manda esse tipo de update.
 ALLOWED_UPDATES='["message","message_reaction"]'
@@ -461,7 +417,6 @@ while true; do
   check_new_devices
   process_reminders
   process_screen_nudges
-  process_habits
   echo "$(date +%s)" > "$STATE/heartbeat"   # watchdog: prova de vida do loop
   RESP=$(curl -s --max-time 60 -G "$API/getUpdates" --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=50" --data-urlencode "allowed_updates=$ALLOWED_UPDATES")
   [ -z "$RESP" ] && sleep 2 && continue
@@ -604,11 +559,13 @@ HABILIDADE CATALOGAR: o inventario aceita POST em http://127.0.0.1:8080/api/devi
 CLASSIFICAR DISPOSITIVO NOVO: quando chegar um alerta de dispositivo novo e o usuario responder de quem e / se e conhecido ou visitante (ex.: "e o celular do Joao, visitante"), catalogue aquele IP/MAC: defina name (ex.: "Celular do Joao"), owner (Joao), trusted=true, e status=visitante se for visitante (senao ativo). Descubra o MAC do IP rodando investigate.sh ou consultando a rede. Confirme o que registrou.
 RECADO PARA AS FILHAS: para enviar mensagem/lembrete as filhas no Telegram delas, rode /home/rodrigor/homewatch/notify_kids.sh "mensagem" [Gabi|Ana|all]. Ex.: avisar as duas -> notify_kids.sh "nao esquecam de arrumar o quarto" all. Confirme para quem enviou.
 LEMBRETES (data/hora ou por chegada em casa): rode /home/rodrigor/homewatch/reminder_add.sh <target> <time|presence> <quando> <mensagem>. target: Gabi, Ana, Ayla, admin, all. time: <quando> e data/hora que o `date -d` entende (ex.: "tomorrow 08:00", "2026-06-10 18:00", "18:00") — rode `date` antes p/ saber a hora atual e calcular certo. presence: <quando>="-" e dispara quando o aparelho do target chega na rede (ex.: reminder_add.sh Ana presence - "tomar o remedio quando chegar"). Sempre confirme o lembrete criado (target e quando).
-HABITOS (coach de bons hábitos; ferramenta /home/rodrigor/homewatch/habit.sh; hábitos são PRIVADOS por pessoa — aqui você cuida dos do Rodrigo):
-- Registrar prática + MÉTRICA: quando o Rodrigo disser que praticou, rode habit.sh log Rodrigo "Exercício" <valor> <unidade> "<nota>" capturando a métrica que ele citou. Ex.: corri 5km -> habit.sh log Rodrigo Exercício 5 km corrida; treinei 40 min -> habit.sh log Rodrigo Exercício 40 min musculacao; sem número -> use o hífen no lugar do valor e da unidade. Depois habit.sh status Rodrigo e comemore o progresso, curtinho e genuíno (sem frieza), citando a métrica/evolução se fizer sentido.
-- Progresso: habit.sh status Rodrigo (formato nome|feitos|meta|streak|metrica-da-semana). Hábitos de leitura usariam paginas/capitulos; corrida km; etc.
-- Criar hábito novo: se pedir, faça mini-entrevista curta (qual, por quê, meta tipo Nx/semana ou diário, versão minizinha) e crie: habit.sh create Rodrigo <weekly_count|daily> <meta> <nome>; ajuste com habit.sh set Rodrigo <nome> why|tiny|cue_time <valor>. Confirme.
-Hábito atual do Rodrigo: Exercício físico (base aeróbica em Zona 2, meta de subir o VO2 max). A meta semanal MUDA sozinha — a revisão de domingo (habit_analyze.sh) pode subir ou baixar o alvo. NUNCA cite a meta de cabeça: rode habit.sh status Rodrigo (nome|feitos|meta|streak|metrica) e leia a meta de lá.
+HABITOS (registro de hábitos do Rodrigo; ferramenta /home/rodrigor/homewatch/habitos.sh):
+- Registrar que FEZ: HABITOS_ORIGEM=telegram habitos.sh log <habito> <valor|-> <unidade|-> "<nota>" [--fc <bpm>] [--data AAAA-MM-DD]. Ex.: "corri 5km" -> habitos.sh log exercicio 5 km "corrida"; "fiz 40 min de bike, FC média 122" -> habitos.sh log exercicio 40 min "bike interna" --fc 122. Sem número, use - no valor e na unidade. Capture SEMPRE a métrica que ele citou (minutos, km, FC, carga) — é o dado que o coach vai usar depois.
+- Registrar que NÃO fez: habitos.sh falha <habito> <obstaculo> "<nota>". obstaculo: agenda|cansaco|esqueci|ambiente|doenca|viagem|sem_vontade. REGRA: só registre falha quando ele DISSER que não fez. Silêncio nao e falha — nunca invente.
+- Medição corporal (VO2, peso, IMC): habitos.sh metrica exercicio vo2max 32.1 ml/kg/min resultado.
+- Progresso: habitos.sh status [habito] (semanas recentes, dose e falhas). Estratégia corrente: habitos.sh estrategia exercicio.
+- Hábitos hoje: exercicio (ativo), pausas_anti_sedentarismo (suspenso). A meta semanal vive na estratégia e muda com o tempo: NUNCA cite de cabeça, leia do status.
+- IMPORTANTE: o coach automático (lembrete no horário, cobrança de ritmo, revisão semanal) está DESLIGADO — está sendo reescrito. Hoje o registro é manual, por aqui. Não prometa lembrete que não vai acontecer.
 TODOIST (tarefas e lista de compras do Rodrigo; ferramenta /home/rodrigor/homewatch/todoist.sh): quando o Rodrigo pedir pra anotar uma tarefa/afazer, ou um item de compra, use o Todoist.
 - Anotar tarefa: todoist.sh add "texto" "vencimento em pt (ex: amanha 18h, sexta, toda segunda)" "Projeto opcional". Ex.: anota pagar o IPTU sexta -> todoist.sh add "pagar o IPTU" "sexta".
 - Item de compra: todoist.sh shop "item" (vai pro projeto Compras). Ex.: poe leite na lista -> todoist.sh shop "leite".
@@ -621,7 +578,7 @@ AGENDA (compromissos do Rodrigo; ferramenta /home/rodrigor/homewatch/agenda.sh; 
 - CRIAR evento no Google Calendar (reuniao, compromisso com hora, com ou sem convidados): agenda.sh new "<titulo>" "<inicio>" ["<fim>"] [--local X] [--desc Y] [--convida a@x,b@y]. Datas em pt valem (ex.: "amanha 14h", "20/06 9h30"); sem fim dura 1h; com --convida o Google manda o convite. Ex.: marca reuniao com o Joao sexta 14h as 15h -> agenda.sh new "Reuniao Joao" "sexta 14h" "sexta 15h" --convida joao@x.com. Devolve o id do evento.
 - EDITAR/CANCELAR evento do Google: agenda.sh edit <id> [--titulo|--inicio|--fim|--local|--desc|--convida ...] ; agenda.sh cancel <id> (notifica convidados). O id aparece como [#id] na saida do today/week -- liste primeiro pra achar o id.
 - GOOGLE CALENDAR x TODOIST: use o Google Calendar (agenda.sh new) p/ COMPROMISSOS com hora marcada (reuniao, medico, aula), especialmente com convidados. Use Todoist (todoist.sh add) p/ AFAZERES/lembretes pessoais com prazo. "Marca/agenda um horario pra mim" sem ser afazer = Google Calendar.
-- Coach de habito context-aware: ao lembrar do exercicio, rode agenda.sh free 40 1 e sugira um horario que caiba no dia (manha ou fim de tarde), fugindo dos compromissos; se ele topar, pode criar como tarefa no Todoist (todoist.sh add) ou evento no Google (agenda.sh new), conforme ele preferir.
+- Encaixar exercicio na agenda (quando ELE pedir, nao por iniciativa sua): rode agenda.sh free 40 1 e sugira um horario que caiba no dia, fugindo dos compromissos; se ele topar, crie como tarefa no Todoist (todoist.sh add) ou evento no Google (agenda.sh new), como ele preferir.
 FINANÇAS (controle de gastos do Rodrigo; ferramenta /home/rodrigor/homewatch/finance.sh; o Rodrigo fala valores em reais):
 - Lançar gasto: quando ele disser que gastou/pagou algo, rode SOURCE=telegram finance.sh add <valor> "descricao" — a categoria sai automatica. Ex.: gastei 45 no almoco -> SOURCE=telegram finance.sh add 45 "almoco do trabalho"; paguei 320 no mercado -> SOURCE=telegram finance.sh add 320 "mercado". Se ele citar a categoria, passe como 3o argumento.
 - Receita (salario, entrada, pix recebido): acrescente --receita no fim. Ex.: recebi 5000 de salario -> SOURCE=telegram finance.sh add 5000 "salario" "" "" "" --receita.
