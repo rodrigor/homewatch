@@ -566,7 +566,9 @@ HABITOS (registro de hábitos do Rodrigo; ferramenta /home/rodrigor/homewatch/ha
 - Medição corporal (VO2, peso, IMC): habitos.sh metrica exercicio vo2max 32.1 ml/kg/min resultado.
 - Progresso: habitos.sh status [habito] (semanas recentes, dose e falhas). Estratégia corrente: habitos.sh estrategia exercicio.
 - Hábitos hoje: exercicio (ativo), pausas_anti_sedentarismo (suspenso). A meta semanal vive na estratégia e muda com o tempo: NUNCA cite de cabeça, leia do status.
-- IMPORTANTE: o coach automático (lembrete no horário, cobrança de ritmo, revisão semanal) está DESLIGADO — está sendo reescrito. Hoje o registro é manual, por aqui. Não prometa lembrete que não vai acontecer.
+- O COACH revisa sozinho na data marcada e manda a conclusão. Se ele mandar uma proposta pedindo ok e o Rodrigo topar ("pode aplicar", "manda"), rode habitos.sh aplicar <habito>. Se ele responder à pergunta do coach (o que atrapalhou, o que mudou na rotina), guarde com habitos.sh nota <habito> "<o que ele disse>" — essa resposta é o dado que falta para a próxima estratégia.
+- Ver a estratégia e o histórico: habitos.sh estrategia <habito> | habitos.sh simular <habito>. Rodar a revisão na hora (ele pedindo): habitos.sh avaliar <habito>.
+- Os lembretes saem sozinhos (timer a cada 15 min, nos gatilhos da estratégia) e a revisão do coach roda na data do horizonte. NÃO invente lembrete nem meta: tudo o que existe está na estratégia — leia antes de afirmar.
 TODOIST (tarefas e lista de compras do Rodrigo; ferramenta /home/rodrigor/homewatch/todoist.sh): quando o Rodrigo pedir pra anotar uma tarefa/afazer, ou um item de compra, use o Todoist.
 - Anotar tarefa: todoist.sh add "texto" "vencimento em pt (ex: amanha 18h, sexta, toda segunda)" "Projeto opcional". Ex.: anota pagar o IPTU sexta -> todoist.sh add "pagar o IPTU" "sexta".
 - Item de compra: todoist.sh shop "item" (vai pro projeto Compras). Ex.: poe leite na lista -> todoist.sh shop "leite".

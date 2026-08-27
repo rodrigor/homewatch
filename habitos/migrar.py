@@ -145,12 +145,17 @@ def estrategia_v1(con, fp, hid):
     txt = json.dumps(spec, ensure_ascii=False, indent=2)
     open(destino, "w").write(txt + "\n")
     open(os.path.join(DIR, "estrategias", hid, "v1.json"), "w").write(txt + "\n")
+    # ativa_de = quando o hábito nasceu, não quando migramos: a v1 é o retrato de
+    # uma estratégia que JÁ estava no ar, e datá-la de hoje jogaria fora o
+    # histórico inteiro na primeira avaliação do coach.
+    nascimento = (datetime.fromtimestamp(h["created"]).strftime("%Y-%m-%d")
+                  if h.get("created") else R.hoje())
     con.execute("""INSERT OR REPLACE INTO estrategias
                    (habito, versao, ativa_de, ativa_ate, arquivo, hash, autor, hipotese)
                    VALUES (?,?,?,?,?,?,?,?)""",
-                (hid, 1, R.hoje(), None, os.path.relpath(destino, RAIZ),
+                (hid, 1, nascimento, None, os.path.relpath(destino, RAIZ),
                  hashlib.sha256(txt.encode()).hexdigest()[:16], "migracao", None))
-    R.grava_evento(con, hid, "estrategia_ativada", "migracao", R.hoje(),
+    R.grava_evento(con, hid, "estrategia_ativada", "migracao", nascimento,
                    {"versao": 1, "origem": "migração do sistema velho"})
     return destino
 

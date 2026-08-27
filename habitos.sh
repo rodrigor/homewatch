@@ -10,6 +10,10 @@
 #   habitos.sh pausar <habito> [ate] [motivo] | retomar <habito>
 #   habitos.sh status [habito]        # resumo legível da semana
 #   habitos.sh ativas | validar <habito>
+#   habitos.sh avaliar <habito> [--dry-run]   # roda o coach
+#   habitos.sh aplicar <habito>               # aprova a proposta pendente
+#   habitos.sh simular <habito> [--de DATA]   # replay sobre o histórico
+#   habitos.sh nota <habito> "<texto>"
 #   habitos.sh semana [habito]        # JSON cru (para o coach/dashboard)
 #   habitos.sh eventos [habito] [n]
 #   habitos.sh estrategia [habito]    # mostra a spec corrente
@@ -91,6 +95,13 @@ case "$cmd" in
     h="${1:?uso: habitos.sh interpretar <habito> \"<texto>\"}"; t="${2:?texto}"
     "$DIR/habitos/sensor.py" interpretar "$h" "$t" --aplicar \
       --origem "${HABITOS_ORIGEM:-telegram}" ${DATA:+--data "$DATA"} ;;
+  nota) # contexto em texto livre (resposta a uma pergunta do coach, observação)
+    h="${1:?habito}"; t="${2:?texto}"
+    "$REG" evento --habito "$h" --tipo nota --origem "${HABITOS_ORIGEM:-manual}" \
+      --payload "$(jq -nc --arg t "$t" '{texto:$t}')" >/dev/null && echo "ok: anotado em $h" ;;
+  avaliar) "$DIR/habitos/coach.py" avaliar "${1:?habito}" "${@:2}" ;;
+  aplicar) "$DIR/habitos/coach.py" aplicar "${1:?habito}" ;;
+  simular) "$DIR/habitos/coach.py" simular "${1:?habito}" "${@:2}" ;;
   tick)    "$DIR/habitos/rotina.py" tick "$@" ;;
   pausar)  "$DIR/habitos/rotina.py" pausar "${1:?habito}" ${2:+--ate "$2"} ${3:+--motivo "$3"} ;;
   retomar) "$DIR/habitos/rotina.py" retomar "${1:?habito}" ;;
