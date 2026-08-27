@@ -1,6 +1,6 @@
 #!/bin/bash
 # vault.sh — consulta os vaults Obsidian (método PARA) do Rodrigo, espelhados no Pi.
-# Repos privados: rodrigor/home -> ~/vault-home ; uana-tech/uana-home -> ~/vault-uana
+# Repo privado: uana-tech/uana-home -> ~/vault-uana (o vault "home" saiu do Pi em 2026-08-23).
 # (só .md/.excalidraw). Atualizados por git pull (cron 15min) ou "vault.sh update".
 # Resultados vêm rotulados por vault: "home/…" ou "uana/…".
 #
@@ -15,8 +15,9 @@
 set -eu
 
 # Config dos vaults: "label|dir|arquivo-indice"
+# O vault "home" saiu daqui em 2026-08-23 (deixou de ser repo git; a cópia do Pi
+# envelhecia sem sincronizar). Sobrou o da Uaná, que continua vindo por git pull.
 VAULTS=(
-  "home|$HOME/vault-home|INDEX.md"
   "uana|$HOME/vault-uana|uana.tech.md"
 )
 
