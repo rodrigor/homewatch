@@ -6,7 +6,7 @@
 --
 -- Datas: tudo em hora LOCAL (America/Recife), no formato 'YYYY-MM-DD HH:MM:SS'.
 -- `ts` = quando foi registrado; `data` = o dia a que o fato se refere (podem
--- divergir: registrar hoje um treino de ontem é normal).
+-- divergir: registrar hoje uma sessão de ontem é normal).
 
 PRAGMA journal_mode = WAL;
 
@@ -38,8 +38,9 @@ CREATE TABLE IF NOT EXISTS metricas (
   valor_txt TEXT,
   unidade   TEXT,
   classe    TEXT NOT NULL DEFAULT 'contexto',
-  -- como a métrica se agrega no tempo. Sem isto, a view somava peso e VO2 ao
-  -- longo da semana (87 kg + 87 kg = 174 kg): dose se soma, medição não.
+  -- como a métrica se agrega no tempo. Sem isto, a view somava ao longo da
+  -- semana uma medição que é ponto no tempo (87 + 87 = 174): dose se soma,
+  -- medição não.
   agregacao TEXT NOT NULL DEFAULT 'soma',   -- soma | media | ultimo
   fonte     TEXT NOT NULL,
   evento_id INTEGER REFERENCES eventos(id)
@@ -90,7 +91,7 @@ CREATE VIEW v_metricas AS
   SELECT *, date(data, '-' || ((strftime('%w', data) + 6) % 7) || ' days') AS semana
   FROM metricas;
 
--- sessoes = dias distintos com treino (é o que "3x por semana" quer dizer);
+-- sessoes = dias distintos com registro (é o que "3x por semana" quer dizer);
 -- registros = quantos eventos, para o caso de mais de uma sessão no mesmo dia.
 DROP VIEW IF EXISTS v_sessoes_semanais;
 CREATE VIEW v_sessoes_semanais AS

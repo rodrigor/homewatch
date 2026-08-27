@@ -2,14 +2,14 @@
 # habitos.sh — fachada do sistema de hábitos (registro + estratégia + rotina + coach).
 # Fatia 1: só registro. rotina/coach entram nas fatias seguintes.
 #
-#   habitos.sh log <habito> <valor|-> <unidade|-> ["nota"] [--data AAAA-MM-DD] [--fc 122]
+#   habitos.sh log <habito> <valor|-> <unidade|-> ["nota"] [--data AAAA-MM-DD] [--m campo=valor]...
 #   habitos.sh falha <habito> [obstaculo] ["nota"] [--data ...]
 #   habitos.sh metrica <habito> <campo> <valor> [unidade] [classe]
 #   habitos.sh interpretar <habito> "<texto livre>"   # LLM -> métricas
 #   habitos.sh tick [--dry-run] [--agora "AAAA-MM-DD HH:MM"]   # roda a estratégia
 #   habitos.sh pausar <habito> [ate] [motivo] | retomar <habito>
 #   habitos.sh status [habito]        # resumo legível da semana
-#   habitos.sh ativas | validar <habito>
+#   habitos.sh ativas | validar <habito> | lint
 #   habitos.sh avaliar <habito> [--dry-run]   # roda o coach
 #   habitos.sh aplicar <habito>               # aprova a proposta pendente
 #   habitos.sh simular <habito> [--de DATA]   # replay sobre o histórico
@@ -24,17 +24,39 @@ REG="$DIR/habitos/registro.py"
 EST="$DIR/habitos/estrategias"
 
 # separa flags --chave valor dos argumentos posicionais
-DATA=""; FC=""; POS=()
+DATA=""; MET=(); POS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --data) DATA="$2"; shift 2;;
-    --fc)   FC="$2";   shift 2;;
+    --m)    MET+=("$2"); shift 2;;   # campo=valor (repetível); o campo tem de
+                                     # estar declarado na coleta da estratégia
     *) POS+=("$1"); shift;;
   esac
 done
 set -- ${POS[@]+"${POS[@]}"}
 cmd="${1:-status}"; shift || true
 data_flag(){ [ -n "$DATA" ] && printf -- '--data\n%s\n' "$DATA"; }
+
+# A coleta declarada na estratégia é quem diz que campos existem, com que
+# unidade, classe e agregação. O núcleo não conhece nenhum campo por nome.
+campo_por_unidade(){ # <habito> <unidade> -> nome do campo (ou vazio)
+  jq -r --arg u "$2" '[.coleta[]|select((.quando//"")!="falha" and .unidade==$u)|.campo][0] // empty' \
+    "$EST/$1.json" 2>/dev/null
+}
+spec_do_campo(){ # <habito> <campo> -> "unidade:classe:agregacao" (vazio se não declarado)
+  jq -r --arg c "$2" '.coleta[]|select(.campo==$c)|
+      "\(.unidade // "")|\(.classe // (if .obrigatorio then "resultado" else "contexto" end))|\(.agregacao // "soma")"' \
+    "$EST/$1.json" 2>/dev/null | head -1
+}
+campos_validos(){ jq -r '[.coleta[]|select((.quando//"")!="falha")|
+      "\(.campo)\(if .unidade then " ("+.unidade+")" else "" end)"]|join(", ")' "$EST/$1.json" 2>/dev/null; }
+
+metrica_arg(){ # <habito> <campo> <valor> -> "campo=valor:unidade:classe:agregacao"
+  local d; d=$(spec_do_campo "$1" "$2")
+  [ -z "$d" ] && { echo "campo '$2' não existe na estratégia de $1 (declarados: $(campos_validos "$1"))" >&2; return 1; }
+  IFS='|' read -r un cl ag <<< "$d"
+  printf '%s=%s:%s:%s:%s' "$2" "$3" "$un" "$cl" "$ag"
+}
 
 meta_de(){ # meta de adesão declarada na estratégia corrente (só para exibir)
   local h="$1"; [ -f "$EST/$h.json" ] || return 0
@@ -48,10 +70,15 @@ case "$cmd" in
     args=(sessao --habito "$h" --origem "${HABITOS_ORIGEM:-manual}")
     mapfile -t df < <(data_flag); args+=(${df[@]+"${df[@]}"})
     if [ "$val" != "-" ] && [ "$un" != "-" ]; then
-      case "$un" in min) campo=minutos;; km) campo=distancia;; *) campo="$un";; esac
-      args+=(--metrica "$campo=$val:$un:resultado")
+      campo=$(campo_por_unidade "$h" "$un")
+      [ -z "$campo" ] && { echo "unidade '$un' não corresponde a campo nenhum da estratégia de $h (declarados: $(campos_validos "$h"))" >&2; exit 1; }
+      m=$(metrica_arg "$h" "$campo" "$val") || exit 1
+      args+=(--metrica "$m")
     fi
-    [ -n "$FC" ] && args+=(--metrica "fc_media=$FC:bpm:contexto")
+    for kv in ${MET[@]+"${MET[@]}"}; do
+      m=$(metrica_arg "$h" "${kv%%=*}" "${kv#*=}") || exit 1
+      args+=(--metrica "$m")
+    done
     [ -n "$nota" ] && args+=(--nota "$nota")
     "$REG" "${args[@]}" >/dev/null || exit 1
     "$0" status "$h" ;;
@@ -107,6 +134,7 @@ case "$cmd" in
   retomar) "$DIR/habitos/rotina.py" retomar "${1:?habito}" ;;
   validar) "$DIR/habitos/estrategia.py" validar "${1:?habito}" ;;
   ativas)  "$DIR/habitos/estrategia.py" ativas ;;
+  lint)    "$DIR/habitos/lint_nucleo.py" ;;   # o núcleo não pode saber de domínio   # o núcleo não pode saber de domínio
   semana)  h="${1:-}"; "$REG" semana ${h:+--habito "$h"} --n "${2:-12}" ;;
   eventos) h="${1:-}"; "$REG" eventos ${h:+--habito "$h"} --n "${2:-20}" ;;
   estrategia)

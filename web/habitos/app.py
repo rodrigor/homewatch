@@ -99,6 +99,12 @@ def api_resumo():
             "revisar_em": spec["horizonte"].get("revisar_em"),
             "criterio_resultado": spec["criterio_sucesso"].get("resultado"),
             "gatilhos": spec.get("gatilhos", []),
+            # o formulário é GERADO pela coleta da estratégia: o painel não pode
+            # ter nome de campo escrito no código (ver habitos/lint_nucleo.py)
+            "coleta": [c for c in spec.get("coleta", []) if c.get("quando") != "falha"],
+            "obstaculos_validos": next(
+                (c.get("valores", []) for c in spec.get("coleta", [])
+                 if c.get("quando") == "falha"), []),
             "semana_atual": {"sessoes": atual, "meta": meta},
             "serie": [{"semana": s, "sessoes": sess.get(s, 0)} for s in jan],
             "metricas": mets, "obstaculos": obst,
@@ -287,7 +293,8 @@ function metricasHTML(m){
     if(!vals.length) return "";
     const ult = vals[vals.length-1];
     const rot = d.agregacao === "ultimo" ? "última medição" : "última semana";
-    return `<div class=kpi><b>${(+ult[1]).toFixed(campo==="vo2max"?1:0)}${d.unidade?" "+d.unidade:""}</b>
+    const v = +ult[1], txt = Number.isInteger(v) ? v : v.toFixed(1);
+    return `<div class=kpi><b>${txt}${d.unidade?" "+d.unidade:""}</b>
             <span>${campo} · ${rot} (${ult[0].slice(8,10)}/${ult[0].slice(5,7)})</span></div>`;
   }).join("");
   return linhas ? `<div class=grid>${linhas}</div>` : "";
@@ -315,14 +322,16 @@ function coachHTML(h){
      ${vs}</table></details>`;
 }
 function formHTML(h){
-  const campos = (h.gatilhos, ["minutos","fc_media"]).map(c =>
-    `<div><label>${c}</label><input type=number step=any id="f-${h.habito}-${c}"></div>`).join("");
+  const campos = h.coleta.map(c =>
+    `<div><label>${c.campo}${c.unidade ? " ("+c.unidade+")" : ""}</label>
+     <input type=${c.tipo === "numero" ? "number" : "text"} step=any
+            id="f-${h.habito}-${c.campo}"></div>`).join("");
   return `<form class=reg onsubmit="return registrar('${h.habito}')">
     <div><label>data</label><input type=date id="f-${h.habito}-data" value="${ST.hoje}"></div>
     ${campos}
     <div style="flex:1;min-width:160px"><label>nota</label>
-      <input style="width:100%" id="f-${h.habito}-nota" placeholder="bike interna, puxado no fim"></div>
-    <button>registrar treino</button>
+      <input style="width:100%" id="f-${h.habito}-nota"></div>
+    <button>registrar</button>
     <button type=button class=sec onclick="naoFiz('${h.habito}')">não fiz</button>
   </form>`;
 }
@@ -350,15 +359,17 @@ function render(){
   }).join("") || "<div class=card>Nenhuma estratégia encontrada.</div>";
 }
 async function registrar(hid){
+  const h = ST.habitos.find(x => x.habito === hid);
   const g = c => document.getElementById(`f-${hid}-${c}`).value;
-  const body = {habito:hid, data:g("data"), nota:g("nota"),
-                minutos:g("minutos"), fc_media:g("fc_media")};
+  const body = {habito:hid, data:g("data"), nota:g("nota")};
+  h.coleta.forEach(c => { body[c.campo] = g(c.campo); });
   await fetch("/api/log", {method:"POST", headers:{"Content-Type":"application/json"},
                            body:JSON.stringify(body)});
   carregar(); return false;
 }
 async function naoFiz(hid){
-  const o = prompt("o que atrapalhou? (agenda, cansaco, esqueci, ambiente, doenca, viagem, sem_vontade)");
+  const h = ST.habitos.find(x => x.habito === hid);
+  const o = prompt("o que atrapalhou? (" + (h.obstaculos_validos || []).join(", ") + ")");
   if(o === null) return;
   await fetch("/api/log", {method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({habito:hid, fez:false, obstaculo:o,

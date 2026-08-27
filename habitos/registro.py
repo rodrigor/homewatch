@@ -11,14 +11,14 @@ Saída sempre em JSON no stdout (quem formata para humano é o habitos.sh).
 
 Uso:
   registro.py init
-  registro.py sessao   --habito exercicio [--data AAAA-MM-DD] [--nota "..."]
-                       [--metrica campo=valor[:unidade[:classe]]]...
-  registro.py falha    --habito exercicio [--data ...] [--obstaculo cansaco] [--nota ...]
-  registro.py evento   --habito X --tipo lembrete [--payload '{}']
-  registro.py metrica  --habito X --campo vo2max --valor 30.5 [--unidade ml/kg/min]
-                       [--classe resultado] [--data ...]
-  registro.py semana   [--habito X] [--n 12]
-  registro.py eventos  [--habito X] [--n 30] [--tipo sessao]
+  registro.py sessao   --habito HABITO [--data AAAA-MM-DD] [--nota "..."]
+                       [--metrica campo=valor[:unidade[:classe[:agregacao]]]]...
+  registro.py falha    --habito HABITO [--data ...] [--obstaculo MOTIVO] [--nota ...]
+  registro.py evento   --habito HABITO --tipo lembrete [--payload '{}']
+  registro.py metrica  --habito HABITO --campo CAMPO --valor N [--unidade U]
+                       [--classe resultado] [--agregacao ultimo] [--data ...]
+  registro.py semana   [--habito HABITO] [--n 12]
+  registro.py eventos  [--habito HABITO] [--n 30] [--tipo sessao]
   registro.py consulta "SELECT ..."      (somente leitura)
 """
 import argparse, json, os, sqlite3, sys
@@ -228,7 +228,7 @@ def main():
     sp = sub.add_parser("evento", help="evento cru (rotina/coach)")
     comum(sp); sp.add_argument("--tipo", required=True); sp.add_argument("--payload")
 
-    sp = sub.add_parser("metrica", help="métrica solta (ex.: VO2, peso)")
+    sp = sub.add_parser("metrica", help="métrica solta, fora de uma sessão")
     comum(sp); sp.add_argument("--campo", required=True); sp.add_argument("--valor", required=True)
     sp.add_argument("--unidade"); sp.add_argument("--classe", default="contexto")
     sp.add_argument("--agregacao", default="soma", choices=["soma", "media", "ultimo"])

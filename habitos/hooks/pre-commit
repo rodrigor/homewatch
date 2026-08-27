@@ -1,0 +1,12 @@
+#!/bin/bash
+# pre-commit — bloqueia commit que enfie domínio no núcleo do sistema de hábitos.
+# Instale com: ln -sf ../../habitos/hooks/pre-commit .git/hooks/pre-commit
+RAIZ="$(git rev-parse --show-toplevel)"
+[ -x "$RAIZ/habitos/lint_nucleo.py" ] || exit 0
+if ! "$RAIZ/habitos/lint_nucleo.py" >/dev/null 2>&1; then
+  echo
+  "$RAIZ/habitos/lint_nucleo.py"
+  echo
+  echo "commit bloqueado. Se a exceção for real mesmo, marque a linha com 'nucleo:ok'."
+  exit 1
+fi

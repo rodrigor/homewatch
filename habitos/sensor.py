@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """sensor.py — texto livre vira métrica estruturada.
 
-O que a pessoa manda é "fiz 40 min de bike, ficou puxado no fim" ou "não deu,
-tava viajando". O registro precisa disso como {minutos: 40} ou
-{obstaculo: viagem}. Aqui é o único lugar do sistema onde a LLM tem permissão de
-interpretar — e a saída dela é validada contra a coleta declarada na estratégia
-antes de virar linha no banco.
+A pessoa escreve em prosa ("fiz 40 minutinhos, ficou puxado no fim"; "não deu,
+tava viajando"). O registro precisa disso como campos e valores. Aqui é o único
+lugar do sistema onde a LLM tem permissão de interpretar — e a saída dela é
+validada contra a coleta declarada NA ESTRATÉGIA antes de virar linha no banco:
+é a estratégia que diz quais campos existem, não este módulo.
 
 Duas regras que vêm do sistema velho:
   - o que a pessoa NÃO disse não se inventa: campo ausente fica ausente;

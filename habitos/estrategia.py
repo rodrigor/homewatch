@@ -42,7 +42,7 @@ EMOJI_PADRAO = "🎯"
 def assinar(spec, texto):
     """Toda mensagem sai com o cabeçalho do coach que a mandou:
 
-        💪 <b>Coach: Exercícios</b>
+        {emoji} <b>Coach: {nome}</b>
 
         <mensagem>
 
