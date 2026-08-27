@@ -281,6 +281,7 @@ def cmd_avaliar(a, con):
         msg = (f"Já testamos {falhadas} estratégias para <b>{spec.get('nome')}</b> e "
                "nenhuma pegou. Em vez de ajustar mais um parâmetro: o que está "
                "realmente atrapalhando — e esse hábito ainda faz sentido agora?")
+        msg = E.assinar(spec, msg)
         prop = {"decisao": "conversa_humana", "diagnostico": "teto de escalada atingido",
                 "mudancas": {}, "mensagem": msg}
         if not a.dry_run:
@@ -354,7 +355,7 @@ def cmd_avaliar(a, con):
                 + json.dumps(mudancas, ensure_ascii=False) +
                 f"</code>\nResponda <b>aplicar {a.habito}</b> para valer.")
     if msg:
-        subprocess.run([TG, msg], capture_output=True, timeout=30)
+        subprocess.run([TG, E.assinar(spec, msg)], capture_output=True, timeout=30)
     resultado["mensagem"] = msg
     return resultado
 

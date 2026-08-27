@@ -36,6 +36,25 @@ class Invalida(Exception):
     pass
 
 
+EMOJI_PADRAO = "🎯"
+
+
+def assinar(spec, texto):
+    """Toda mensagem sai com o cabeçalho do coach que a mandou:
+
+        💪 <b>Coach: Exercícios</b>
+
+        <mensagem>
+
+    Com mais de um hábito no mesmo chat do Telegram, mensagem sem cabeçalho
+    chega órfã: a pessoa não sabe quem está falando nem sobre o quê."""
+    emoji = spec.get("emoji") or EMOJI_PADRAO
+    nome = spec.get("coach") or spec.get("nome") or spec["habito"]
+    texto = (texto or "").strip()
+    cabecalho = f"{emoji} <b>Coach: {nome}</b>"
+    return texto if texto.startswith(emoji) else f"{cabecalho}\n\n{texto}"
+
+
 def caminho(habito):
     return os.path.join(EST, f"{habito}.json")
 
@@ -83,6 +102,10 @@ def validar(spec):
     if int(hz.get("dwell_min_semanas", 0)) < 1:
         raise Invalida("horizonte.dwell_min_semanas deve ser >= 1: estratégia que "
                        "pode ser trocada a qualquer momento nunca é testada")
+
+    emoji = spec.get("emoji", "")
+    if emoji and len(emoji) > 4:
+        raise Invalida(f"emoji deve ser 1-2 caracteres: {emoji!r}")
 
     for g in spec["gatilhos"]:
         if g.get("tipo") not in TIPOS_GATILHO:

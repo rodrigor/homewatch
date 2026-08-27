@@ -138,7 +138,7 @@ def processar_gatilhos(con, spec, agora, dry):
         if lembretes_do_dia(con, habito, dia, i):
             continue
         ctx = contexto(con, spec, agora)
-        texto = render(spec, g.get("msg", "lembrete"), ctx)
+        texto = E.assinar(spec, render(spec, g.get("msg", "lembrete"), ctx))
         if not texto.strip():
             continue
         if enviar(spec.get("canal", "telegram_admin"), texto, dry):

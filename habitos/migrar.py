@@ -22,6 +22,10 @@ RAIZ = os.path.dirname(DIR)
 sys.path.insert(0, DIR)
 import registro as R
 
+# Cada coach assina o que manda: com vários hábitos no mesmo chat, a assinatura
+# é o que diz de quem é a mensagem antes de ela ser lida.
+EMOJI_HABITO = {"exercicio": ("💪", "Exercícios"),
+                "pausas_anti_sedentarismo": ("🪑", "Pausas")}
 UNIDADE_CAMPO = {"min": ("minutos", "resultado"), "km": ("distancia", "resultado"),
                  "paginas": ("paginas", "resultado")}
 MEDICOES_CAMPO = {"vo2max": ("vo2max", "ml/kg/min"), "peso_kg": ("peso", "kg"),
@@ -112,6 +116,8 @@ def estrategia_v1(con, fp, hid):
         "estado": ("ativo" if h.get("status") == "active" and h.get("log")
                    else "suspenso"),
         "nome": h.get("name"), "motivacao": h.get("why", ""),
+        "emoji": EMOJI_HABITO.get(hid, ("🎯", nome))[0],
+        "coach": EMOJI_HABITO.get(hid, ("🎯", nome))[1],
         "hipotese": None,
         "observacao": "Reconstruída do sistema velho (ad-hoc). Sem hipótese nem "
                       "critério declarado antes — v2 nasce da primeira revisão do coach.",
