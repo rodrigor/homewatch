@@ -2,7 +2,7 @@
 """perguntas.py — pergunta de sim/não respondida por reação (👍/👎) no Telegram.
 
 Reagir é o canal de menor atrito que existe: um toque, sem teclado, sem abrir a
-conversa. Vale a pena para tudo que é binário — "treinou?", "posso aplicar?".
+conversa. Vale a pena para tudo que é binário — "aconteceu?", "posso aplicar?".
 
 A resposta executa uma AÇÃO DECLARADA no momento da pergunta, de uma lista
 fechada. Nada de comando arbitrário guardado à espera de um clique: o que a

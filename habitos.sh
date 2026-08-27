@@ -92,6 +92,10 @@ case "$cmd" in
     done
     [ -n "$nota" ] && args+=(--nota "$nota")
     "$REG" "${args[@]}" >/dev/null || exit 1
+    # reconhecimento: só sai se houver fato novo (ver habitos/tecnicas.json,
+    # reconhecimento_informativo). Sem fato, silêncio.
+    [ "${HABITOS_SEM_PARECER:-0}" = "1" ] || \
+      "$DIR/habitos/rotina.py" reconhecer --habito "$h" ${DATA:+--data "$DATA"} >/dev/null 2>&1
     "$0" status "$h" ;;
 
   falha) # registra que NÃO fez, com o motivo (silêncio NÃO é falha)

@@ -1,0 +1,234 @@
+{
+  "_doc": "Catálogo de técnicas de mudança de comportamento. É a resposta à pergunta 'que estratégia o coach usa'. Vive aqui, como DADO, pelo mesmo motivo que a estratégia vive: para ser auditável, versionável e discutível. É GENÉRICO por construção — nenhuma técnica aqui sabe do assunto de nenhum hábito; o domínio entra só no conteúdo que preenche os espaços de cada uma. O lint_nucleo.py vigia este arquivo justamente para isso.",
+  "_campos": {
+    "base": "de onde vem, para a decisão poder ser contestada",
+    "forca_evidencia": "alta | media | fraca — o coach deve preferir alta quando ambas servirem",
+    "quando_usar": "sinais no diagnóstico que indicam a técnica",
+    "contraindicacoes": "quando NÃO usar, mesmo parecendo tentador",
+    "muda": "caminhos da spec que a técnica costuma alterar",
+    "tipo_mudanca": "ajuste (calibração, pode ser julgado rápido) | abordagem (precisa de tempo)",
+    "semanas_para_julgar": "quanto tempo antes de dizer que funcionou ou não"
+  },
+  "tecnicas": [
+    {
+      "id": "intencao_de_implementacao",
+      "nome": "Intenção de implementação",
+      "base": "Gollwitzer; meta-análise Gollwitzer & Sheeran (2006), d≈0,65",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "sem gatilho definido",
+        "adesão baixa com motivação preservada",
+        "a pessoa esquece mais do que resiste"
+      ],
+      "contraindicacoes": [
+        "gatilho já definido E sendo cumprido"
+      ],
+      "muda": [
+        "gatilhos[].quando",
+        "gatilhos[].dias"
+      ],
+      "exige": "quando, onde e como específicos — vago não funciona",
+      "tipo_mudanca": "abordagem",
+      "semanas_para_julgar": 4
+    },
+    {
+      "id": "ancora_comportamental",
+      "nome": "Âncora em rotina existente",
+      "base": "Fogg (Tiny Habits); Wood & Neal sobre estabilidade de contexto",
+      "forca_evidencia": "media",
+      "quando_usar": [
+        "gatilho por relógio sendo ignorado",
+        "rotina da pessoa varia de horário"
+      ],
+      "contraindicacoes": [
+        "não existe rotina estável para ancorar"
+      ],
+      "muda": [
+        "gatilhos[].quando",
+        "gatilhos[].tipo"
+      ],
+      "exige": "uma rotina que já acontece todo dia, sem falta",
+      "tipo_mudanca": "abordagem",
+      "semanas_para_julgar": 4
+    },
+    {
+      "id": "reduzir_ate_nao_falhar",
+      "nome": "Reduzir até não dar para falhar",
+      "base": "Fogg (B=MAP: aumentar capacidade em vez de exigir motivação); Bandura (domínio graduado)",
+      "forca_evidencia": "media",
+      "quando_usar": [
+        "falhas seguidas",
+        "confiança declarada baixa",
+        "a pessoa começa e não termina"
+      ],
+      "contraindicacoes": [
+        "meta já no piso",
+        "adesão alta (aí o problema não é tamanho)"
+      ],
+      "muda": [
+        "criterio_sucesso.adesao.min",
+        "mensagens.versao_minima"
+      ],
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 2
+    },
+    {
+      "id": "subir_um_degrau",
+      "nome": "Subir um degrau",
+      "base": "Bandura (experiências de domínio graduadas); Locke & Latham (meta específica e desafiadora)",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "adesão alta e estável",
+        "confiança declarada alta",
+        "resultado no alvo com folga"
+      ],
+      "contraindicacoes": [
+        "adesão abaixo do critério",
+        "confiança declarada < 7"
+      ],
+      "muda": [
+        "criterio_sucesso.adesao.min",
+        "criterio_sucesso.resultado"
+      ],
+      "exige": "um degrau, nunca dois",
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 3
+    },
+    {
+      "id": "plano_de_enfrentamento",
+      "nome": "Plano para o obstáculo (se-então)",
+      "base": "Sniehotta (coping planning, distinto do action planning)",
+      "forca_evidencia": "media",
+      "quando_usar": [
+        "um obstáculo se repete no registro",
+        "a pessoa cumpre quando o dia é normal e falha quando não é"
+      ],
+      "contraindicacoes": [
+        "obstáculos dispersos ou não informados"
+      ],
+      "muda": [
+        "mensagens.*",
+        "gatilhos[].dias"
+      ],
+      "exige": "o obstáculo específico, nomeado pela pessoa",
+      "tipo_mudanca": "abordagem",
+      "semanas_para_julgar": 4
+    },
+    {
+      "id": "nunca_duas_seguidas",
+      "nome": "Nunca duas seguidas",
+      "base": "Marlatt (efeito de violação da abstinência): o dano vem do 'já estraguei tudo', não do lapso; Lally et al. (2010): falhar um dia não prejudicou a automatização",
+      "forca_evidencia": "media",
+      "quando_usar": [
+        "uma falha isolada costuma virar sequência",
+        "a pessoa some depois de errar"
+      ],
+      "contraindicacoes": [
+        "a pessoa já retoma sozinha"
+      ],
+      "muda": [
+        "mensagens.*",
+        "gatilhos[]"
+      ],
+      "exige": "oferecer a versão mínima no dia seguinte à falha, sem cobrança",
+      "tipo_mudanca": "abordagem",
+      "semanas_para_julgar": 4
+    },
+    {
+      "id": "reconhecimento_informativo",
+      "nome": "Reconhecimento informativo",
+      "base": "Fogg (celebração); Deci, Koestner & Ryan (1999): elogio INFORMATIVO sustenta competência, elogio CONTROLADOR corrói motivação intrínseca",
+      "forca_evidencia": "media",
+      "quando_usar": [
+        "fato concreto e novo digno de nota",
+        "retomada depois de sumiço",
+        "primeira vez que algo saiu certo"
+      ],
+      "contraindicacoes": [
+        "nada de novo aconteceu",
+        "já reconheceu algo esta semana",
+        "seria elogio genérico ou repetido"
+      ],
+      "muda": [
+        "celebracao"
+      ],
+      "exige": "citar o NÚMERO ou o fato específico; nunca 'muito bem, continue assim'",
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 3
+    },
+    {
+      "id": "medir_confianca",
+      "nome": "Medir a confiança antes do fato",
+      "base": "Bandura (auto-eficácia como preditor de adesão)",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "não se sabe se a meta cabe",
+        "antes de subir ou baixar meta"
+      ],
+      "contraindicacoes": [
+        "já há confiança medida e recente"
+      ],
+      "muda": [
+        "medicoes",
+        "gatilhos[]"
+      ],
+      "exige": "escala 0-10 sobre a semana que vem, perguntada antes e não depois",
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 2
+    },
+    {
+      "id": "auto_monitoramento",
+      "nome": "Auto-monitoramento",
+      "base": "Michie et al. (taxonomia BCT); Carver & Scheier (teoria do controle). Registrar já é intervenção, não só medição",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "não há dado suficiente para diagnosticar",
+        "o comportamento acontece sem a pessoa perceber"
+      ],
+      "contraindicacoes": [
+        "o registro em si já é o gargalo"
+      ],
+      "muda": [
+        "coleta",
+        "gatilhos[]"
+      ],
+      "tipo_mudanca": "abordagem",
+      "semanas_para_julgar": 4
+    },
+    {
+      "id": "manter_e_observar",
+      "nome": "Manter e observar",
+      "base": "Lally et al. (2010): automatização leva ~66 dias (18-254). Trocar cedo demais impede qualquer estratégia de mostrar o que sabe fazer",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "a estratégia atual ainda não teve tempo",
+        "o sinal é ruído, não tendência"
+      ],
+      "contraindicacoes": [
+        "abandono declarado pela pessoa"
+      ],
+      "muda": [
+        "horizonte.revisar_em"
+      ],
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 2
+    },
+    {
+      "id": "conversa_humana",
+      "nome": "Parar de ajustar e conversar",
+      "base": "SDT (Deci & Ryan): pressão externa produz adesão curta e pior manutenção. Quando o sistema não sabe mais, quem sabe é a pessoa",
+      "forca_evidencia": "alta",
+      "quando_usar": [
+        "técnicas esgotadas",
+        "obstáculo não informado",
+        "teto de escalada atingido"
+      ],
+      "contraindicacoes": [
+        "ainda há técnica plausível não tentada"
+      ],
+      "muda": [],
+      "tipo_mudanca": "ajuste",
+      "semanas_para_julgar": 2
+    }
+  ]
+}

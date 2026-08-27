@@ -359,6 +359,97 @@ Responda só a mensagem."""
     return msg
 
 
+# ── reconhecimento: só quando há FATO novo, e informativo, nunca bajulação ───
+def fatos_da_sessao(con, spec, data):
+    """Fatos verificáveis sobre a sessão recém-registrada. Determinístico de
+    propósito: sem fato, não há reconhecimento — é o que separa reconhecer de
+    bajular. Elogio genérico e repetido não reforça, corrói (Deci, Koestner &
+    Ryan: elogio percebido como controle derruba motivação intrínseca)."""
+    import coach as C
+    habito = spec["habito"]
+    semana = (datetime.strptime(data, "%Y-%m-%d").date()
+              - timedelta(days=datetime.strptime(data, "%Y-%m-%d").date().weekday())).isoformat()
+    fatos = []
+    na_semana = con.execute(
+        """SELECT COUNT(DISTINCT data) n FROM v_eventos
+           WHERE habito=? AND tipo='sessao' AND semana=?""", (habito, semana)).fetchone()["n"]
+    if na_semana == 1:
+        fatos.append({"fato": "primeira_da_semana", "detalhe": "primeira sessão da semana"})
+    meta = float(spec["criterio_sucesso"]["adesao"]["min"])
+    if na_semana == int(meta):
+        fatos.append({"fato": "meta_batida", "detalhe": f"{na_semana} de {meta:g} na semana"})
+    anterior = con.execute(
+        """SELECT MAX(data) d FROM eventos WHERE habito=? AND tipo='sessao' AND data < ?""",
+        (habito, data)).fetchone()["d"]
+    if anterior:
+        dias = (datetime.strptime(data, "%Y-%m-%d")
+                - datetime.strptime(anterior, "%Y-%m-%d")).days
+        if dias >= 14:
+            fatos.append({"fato": "retomada",
+                          "detalhe": f"voltou depois de {dias} dias sem registro"})
+    res = (spec["criterio_sucesso"].get("resultado") or {}).get("metrica")
+    if res:
+        esc = E.escopo_de(spec, res)
+        linha = con.execute(
+            """SELECT valor_num v FROM metricas WHERE escopo=? AND campo=? AND data=?
+               ORDER BY id DESC LIMIT 1""", (esc, res, data)).fetchone()
+        melhor = con.execute(
+            """SELECT MAX(valor_num) m FROM metricas WHERE escopo=? AND campo=? AND data < ?""",
+            (esc, res, data)).fetchone()["m"]
+        if linha and linha["v"] and (melhor is None or linha["v"] > melhor):
+            fatos.append({"fato": "recorde",
+                          "detalhe": f"{res} = {linha['v']:g}, melhor até agora"})
+    return fatos
+
+
+def reconhecimentos_da_semana(con, habito, data):
+    semana = (datetime.strptime(data, "%Y-%m-%d").date()
+              - timedelta(days=datetime.strptime(data, "%Y-%m-%d").date().weekday())).isoformat()
+    return con.execute("""SELECT COUNT(*) n FROM v_eventos WHERE habito=? AND
+                          tipo='reconhecimento' AND semana=?""",
+                       (habito, semana)).fetchone()["n"]
+
+
+def cmd_reconhecer(a, con):
+    spec = E.carregar(a.habito)
+    cfg = spec.get("celebracao") or {}
+    data = a.data or R.hoje()
+    if not cfg.get("quando"):
+        return {"reconhecido": False, "motivo": "estratégia não pede reconhecimento"}
+    fatos = [f for f in fatos_da_sessao(con, spec, data) if f["fato"] in cfg["quando"]]
+    if not fatos:
+        return {"reconhecido": False, "motivo": "nada de novo aconteceu"}
+    if reconhecimentos_da_semana(con, a.habito, data) >= int(cfg.get("max_por_semana", 2)):
+        return {"reconhecido": False, "motivo": "já reconheceu o suficiente esta semana"}
+    prompt = f"""Você é o coach do hábito "{spec.get('nome') or a.habito}". Aconteceu algo
+concreto que merece ser NOTADO. Escreva UMA frase.
+
+FATOS (todos verificados; use pelo menos um, com o número):
+{json.dumps(fatos, ensure_ascii=False, indent=2)}
+
+REGRAS — a diferença entre reconhecer e bajular:
+- cite o FATO ou o NÚMERO. "Primeira da semana" ou "voltou depois de 24 dias", não "boa!".
+- é constatação entre adultos, não prêmio: nada de "muito bem", "orgulho de você",
+  "continue assim", "você consegue". Quem elogia como quem premia vira chefe, e a
+  literatura é clara que isso derruba a motivação em vez de sustentar.
+- sem exclamação em série, no máximo 1 emoji, e o emoji é opcional.
+- não dê conselho, não peça a próxima sessão, não projete o futuro.
+- se, olhando os fatos, não houver realmente nada digno de nota, responda exatamente: NADA
+Responda só a frase."""
+    txt, err = llm.perguntar(prompt, origem=f"reconhecimento/{a.habito}", timeout=90)
+    if err or not txt or txt.strip().upper() == "NADA":
+        return {"reconhecido": False, "motivo": err or "o próprio coach achou que não valia"}
+    msg = E.assinar(spec, txt)
+    if a.dry_run:
+        print(f"[dry-run] {msg}")
+        return {"reconhecido": True, "texto": msg, "fatos": fatos}
+    if enviar(spec.get("canal", "telegram_admin"), msg):
+        R.grava_evento(con, a.habito, "reconhecimento", "coach", data,
+                       {"fatos": fatos, "texto": msg})
+        con.commit()
+    return {"reconhecido": True, "texto": msg, "fatos": fatos}
+
+
 def cmd_reagir(a, con):
     """Estimula os coaches interessados nos campos que acabaram de mudar."""
     campos = [c for c in a.campos.split(",") if c]
@@ -397,6 +488,8 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("tick"); sp.add_argument("--dry-run", action="store_true")
     sp.add_argument("--agora"); sp.add_argument("--habito")
+    sp = sub.add_parser("reconhecer"); sp.add_argument("--habito", required=True)
+    sp.add_argument("--data"); sp.add_argument("--dry-run", action="store_true")
     sp = sub.add_parser("reagir"); sp.add_argument("--campos", required=True)
     sp.add_argument("--escopo", required=True); sp.add_argument("--dry-run", action="store_true")
     sp = sub.add_parser("pausar"); sp.add_argument("habito")
@@ -404,7 +497,8 @@ def main():
     sp = sub.add_parser("retomar"); sp.add_argument("habito")
     a = p.parse_args()
     con = R.conectar()
-    print(json.dumps({"tick": cmd_tick, "reagir": cmd_reagir, "pausar": cmd_pausar,
+    print(json.dumps({"tick": cmd_tick, "reagir": cmd_reagir,
+                      "reconhecer": cmd_reconhecer, "pausar": cmd_pausar,
                       "retomar": cmd_retomar}[a.cmd](a, con),
                      ensure_ascii=False, indent=2))
 

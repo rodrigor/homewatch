@@ -27,11 +27,14 @@ RAIZ = os.path.dirname(DIR)
 NUCLEO = [
     "habitos/registro.py", "habitos/estrategia.py", "habitos/rotina.py",
     "habitos/sensor.py", "habitos/coach.py", "habitos/llm.py",
-    "habitos/schema.sql", "habitos/envelope.json",
+    "habitos/schema.sql", "habitos/envelope.json", "habitos/tecnicas.json",
+    "habitos/perguntas.py",
     "habitos.sh", "web/habitos/app.py",
 ]
 # Fora da lista de propósito: habitos/migrar.py (script histórico, de uma
-# migração específica) e habitos/estrategias/*.json (é onde o domínio deve morar).
+# migração específica), habitos/estrategias/*.json (é onde o domínio deve morar)
+# e este próprio arquivo — ele É o dicionário de termos de domínio, então
+# vigiar-se a si mesmo acusaria cada palavra da lista abaixo.
 
 # Termos que não existem fora de um domínio concreto.
 ABSOLUTOS = re.compile(

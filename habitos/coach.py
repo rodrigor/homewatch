@@ -30,6 +30,8 @@ import estrategia as E
 import llm
 
 ENVELOPE = json.load(open(os.path.join(DIR, "envelope.json")))
+TECNICAS = json.load(open(os.path.join(DIR, "tecnicas.json")))["tecnicas"]
+POR_ID = {t["id"]: t for t in TECNICAS}
 LIM = ENVELOPE["limites"]
 TG = os.path.join(RAIZ, "tg_notify.sh")
 DECISOES = ["manter", "level_up", "reduzir_meta", "mover_gatilho", "ajustar_mensagem",
@@ -165,6 +167,28 @@ def medir(con, spec, ate=None, desde=None):
             "semanas_avaliadas": len(por_semana)}
 
 
+def historico_tecnicas(con, habito):
+    """O que já foi tentado NESTE hábito e como terminou. O catálogo é genérico;
+    o que funciona é por pessoa e por hábito — e só o histórico sabe disso."""
+    linhas = con.execute(
+        """SELECT a.decisao tecnica, a.ts, a.adesao, a.quadrante, a.aplicada,
+                  e.desfecho
+           FROM avaliacoes a LEFT JOIN estrategias e
+             ON e.habito = a.habito AND e.versao = a.versao
+           WHERE a.habito=? ORDER BY a.id""", (habito,)).fetchall()
+    resumo = {}
+    for r in linhas:
+        t = r["tecnica"]
+        if not t:
+            continue
+        d = resumo.setdefault(t, {"tentativas": 0, "aplicada": 0, "desfechos": []})
+        d["tentativas"] += 1
+        d["aplicada"] += 1 if r["aplicada"] else 0
+        if r["desfecho"]:
+            d["desfechos"].append(r["desfecho"])
+    return resumo
+
+
 def historico_decisoes(con, habito, n=8):
     return [dict(r) for r in con.execute(
         """SELECT ts, versao, adesao, quadrante, decisao, aplicada, motivo
@@ -251,10 +275,11 @@ def checar_limites(spec_atual, spec_novo, medida):
 
 
 # ── 3. o LLM (só diagnóstico e proposta) ─────────────────────────────────────
-def propor(spec, medida, historico, falhadas):
+def propor(spec, medida, historico, falhadas, tecnicas_tentadas=None):
     contexto = {
         "estrategia_atual": spec, "medicao": medida,
         "decisoes_anteriores": historico,
+        "tecnicas_ja_tentadas_neste_habito": tecnicas_tentadas,
         "estrategias_falhadas_seguidas": falhadas,
         "pode_mexer_sozinho": ENVELOPE["aplica_sozinho"],
         "precisa_de_ok": ENVELOPE["pede_ok"],
@@ -282,8 +307,25 @@ Como pensar:
 - NUNCA repita uma decisão que já falhou no histórico sem evidência nova.
 - No máximo {LIM['mudancas_por_revisao']} mudanças, e uma hipótese só.
 
+CATÁLOGO DE TÉCNICAS — escolha UMA daqui, pelo id. Não invente técnica fora da lista;
+se nenhuma servir, use 'conversa_humana' e diga o que falta.
+{json.dumps([{k: t[k] for k in ("id", "nome", "base", "forca_evidencia", "quando_usar",
+                                "contraindicacoes", "muda", "tipo_mudanca",
+                                "semanas_para_julgar") if k in t} for t in TECNICAS],
+            ensure_ascii=False, indent=2)}
+
+Como escolher:
+- respeite as contraindicações — elas existem para impedir a escolha tentadora e errada;
+- entre duas técnicas que servem, prefira a de forca_evidencia mais alta;
+- olhe 'tecnicas_ja_tentadas_neste_habito': o catálogo é geral, mas o que funciona é
+  desta pessoa neste hábito. Técnica que já falhou aqui só volta com evidência nova;
+- 'tipo_mudanca' governa o prazo: ajuste é calibração e pode ser julgado rápido;
+  abordagem precisa das semanas_para_julgar da técnica antes de qualquer veredito.
+
 Responda SÓ um JSON:
 {{"diagnostico": "<2-3 frases, concreto, citando os números>",
+  "tecnica": "<id do catálogo>",
+  "porque_esta_tecnica": "<1 frase ligando o diagnóstico à técnica escolhida>",
   "decisao": "<um de: {', '.join(DECISOES)}>",
   "mudancas": {{"<caminho.na.spec>": <valor novo>}},
   "hipotese": "<o que você espera que aconteça, testável>",
@@ -302,7 +344,7 @@ FORMA de criterio_sucesso.resultado (proposta fora disto é recusada na validaç
   "alvo": <número>}}                          // opcional, informativo: a linha de chegada
 Pelo menos um entre min, max e direcao é obrigatório."""
     return llm.perguntar_json(
-        prompt, ("diagnostico", "decisao", "mudancas", "mensagem"),
+        prompt, ("diagnostico", "tecnica", "decisao", "mudancas", "mensagem"),
         modelo="opus", timeout=300, origem="coach")
 
 
@@ -374,13 +416,18 @@ def cmd_avaliar(a, con):
             subprocess.run([TG, msg], capture_output=True, timeout=30)
         return {"decisao": "conversa_humana", "medicao": medida, "mensagem": msg}
 
-    prop, err = propor(spec, medida, historico_decisoes(con, a.habito), falhadas)
+    prop, err = propor(spec, medida, historico_decisoes(con, a.habito), falhadas,
+                       historico_tecnicas(con, a.habito))
     if err:
         return {"erro": f"coach indisponível: {err}", "medicao": medida}
+    tecnica = POR_ID.get(prop.get("tecnica"))
+    if not tecnica:
+        prop["_tecnica_invalida"] = prop.get("tecnica")
 
     mudancas = prop.get("mudancas") or {}
     resultado = {"medicao": medida, "diagnostico": prop.get("diagnostico"),
-                 "decisao": prop.get("decisao"), "mudancas": mudancas}
+                 "decisao": prop.get("decisao"), "tecnica": prop.get("tecnica"),
+                 "porque": prop.get("porque_esta_tecnica"), "mudancas": mudancas}
     def recusar(motivo):
         """Proposta recusada ainda assim conversa: a revisão aconteceu, e o
         diagnóstico vale mesmo sem a mudança. Silêncio aqui esconderia tanto um
@@ -394,8 +441,18 @@ def cmd_avaliar(a, con):
         print(f"proposta recusada: {motivo}", file=sys.stderr)
         return resultado
 
+    if not tecnica:
+        return recusar(f"técnica '{prop.get('tecnica')}' não está no catálogo")
     if len(mudancas) > LIM["mudancas_por_revisao"]:
         return recusar(f"{len(mudancas)} mudanças (máx {LIM['mudancas_por_revisao']})")
+    # a técnica declara onde costuma mexer; mudança fora disso é sinal de que a
+    # justificativa não bate com a ação
+    if tecnica.get("muda") is not None and mudancas:
+        permitido = tecnica["muda"]
+        fora = [c for c in mudancas
+                if permitido and not any(casa_regra(c, r) for r in permitido)]
+        if fora and permitido:
+            return recusar(f"a técnica '{tecnica['id']}' não mexe em {fora}")
 
     novo = aplicar_mudancas(spec, mudancas) if mudancas else None
     veredito, motivo = "auto", "sem mudanças"
@@ -405,6 +462,15 @@ def cmd_avaliar(a, con):
         novo["autor"] = "coach"
         novo["criada"] = R.hoje()
         novo["hipotese"] = prop.get("hipotese")
+        # o prazo para julgar sai da TÉCNICA: calibração se avalia rápido, troca de
+        # abordagem precisa de tempo. Trocar cedo demais foi o erro que enterrou o
+        # sistema velho — quatro alavancas em quatro semanas, nenhuma testada.
+        semanas = int(tecnica.get("semanas_para_julgar", 2))
+        novo["horizonte"]["dwell_min_semanas"] = semanas
+        novo["tecnica_atual"] = {"id": tecnica["id"], "nome": tecnica["nome"],
+                                 "base": tecnica["base"], "desde": R.hoje(),
+                                 "porque": prop.get("porque_esta_tecnica", ""),
+                                 "tipo_mudanca": tecnica.get("tipo_mudanca")}
         novo["horizonte"]["revisar_em"] = E.proxima_revisao(novo, a.em)
         erros = checar_limites(spec, novo, medida)
         try:
