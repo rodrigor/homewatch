@@ -5,7 +5,10 @@
 #   habitos.sh log <habito> <valor|-> <unidade|-> ["nota"] [--data AAAA-MM-DD] [--fc 122]
 #   habitos.sh falha <habito> [obstaculo] ["nota"] [--data ...]
 #   habitos.sh metrica <habito> <campo> <valor> [unidade] [classe]
+#   habitos.sh tick [--dry-run] [--agora "AAAA-MM-DD HH:MM"]   # roda a estratégia
+#   habitos.sh pausar <habito> [ate] [motivo] | retomar <habito>
 #   habitos.sh status [habito]        # resumo legível da semana
+#   habitos.sh ativas | validar <habito>
 #   habitos.sh semana [habito]        # JSON cru (para o coach/dashboard)
 #   habitos.sh eventos [habito] [n]
 #   habitos.sh estrategia [habito]    # mostra a spec corrente
@@ -83,6 +86,11 @@ case "$cmd" in
       [ -n "$m" ] && echo "meta de adesão: ${m}×/semana (estratégia v$(jq -r .versao "$EST/$h.json"), $(jq -r .estado "$EST/$h.json"))"
     fi ;;
 
+  tick)    "$DIR/habitos/rotina.py" tick "$@" ;;
+  pausar)  "$DIR/habitos/rotina.py" pausar "${1:?habito}" ${2:+--ate "$2"} ${3:+--motivo "$3"} ;;
+  retomar) "$DIR/habitos/rotina.py" retomar "${1:?habito}" ;;
+  validar) "$DIR/habitos/estrategia.py" validar "${1:?habito}" ;;
+  ativas)  "$DIR/habitos/estrategia.py" ativas ;;
   semana)  h="${1:-}"; "$REG" semana ${h:+--habito "$h"} --n "${2:-12}" ;;
   eventos) h="${1:-}"; "$REG" eventos ${h:+--habito "$h"} --n "${2:-20}" ;;
   estrategia)

@@ -130,8 +130,13 @@ def estrategia_v1(con, fp, hid):
              "valores": ["agenda", "cansaco", "esqueci", "ambiente", "doenca",
                          "viagem", "sem_vontade"]},
         ],
-        "mensagens": {"tom": "parceiro, experimento, zero cobrança",
-                      "versao_minima": h.get("tiny", "")},
+        "mensagens": {
+            "modo": "template",   # template | llm (llm cai no template se falhar)
+            "tom": "parceiro, experimento, zero cobrança",
+            "versao_minima": h.get("tiny", ""),
+            "lembrete": "⏰ <b>{nome}</b>  {barra}  ({sessoes}/{meta} esta semana)"
+                        "\n💡 <i>{versao_minima}</i>",
+        },
         "gates": {"max_msgs_dia": 1, "janela_horas": [9, 22]},
         "recursos": [],
     }

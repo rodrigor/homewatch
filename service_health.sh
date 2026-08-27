@@ -154,6 +154,7 @@ check_timer_age(){
 check_timer_age "finance-email.timer"  "E-mails financeiros" 30
 check_timer_age "finance-alerts.timer" "Alertas de limite"   75  # roda a cada 1h; tolerância de 15min
 check_timer_age "email-watch.timer"    "Monitor e-mails"     10
+check_timer_age "habitos-tick.timer"  "Hábitos (tick)"      20  # roda a cada 15min
 
 # ── 5. Login do Claude ─────────────────────────────────────────────────────────
 # Não faz probe (gastaria request a cada rodada): lê o marcador que telegram_agent.sh,
