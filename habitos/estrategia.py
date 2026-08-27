@@ -132,6 +132,18 @@ def validar(spec):
                            f"não é coletada, medida nem derivada. Declarar uma métrica nova "
                            f"é pedido de capacidade, não decisão do coach.")
 
+    for sec in cs.get("secundarios", []) or []:
+        if "metrica" not in sec:
+            raise Invalida("secundário precisa de 'metrica'")
+        if sec.get("direcao") and sec["direcao"] not in DIRECOES:
+            raise Invalida(f"direcao inválida no secundário {sec['metrica']}: {sec['direcao']}")
+        conhecidas = ({m["campo"] for m in spec.get("medicoes", [])}
+                      | {c["campo"] for c in spec.get("coleta", [])}
+                      | {d["campo"] for d in spec.get("derivadas", [])})
+        if sec["metrica"] not in conhecidas:
+            raise Invalida(f"secundário aponta para '{sec['metrica']}', que não é "
+                           f"coletada, medida nem derivada")
+
     for m in spec.get("medicoes", []) + spec.get("coleta", []) + spec.get("derivadas", []):
         if m.get("escopo", "habito") not in ESCOPOS:
             raise Invalida(f"escopo inválido em {m.get('campo')}: {m['escopo']} "

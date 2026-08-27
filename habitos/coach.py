@@ -46,6 +46,68 @@ def segundas(de, ate):
     return out
 
 
+def agregacao_de(spec, campo):
+    for bloco in ("coleta", "medicoes", "derivadas"):
+        for item in spec.get(bloco, []) or []:
+            if item.get("campo") == campo:
+                return item.get("agregacao", "soma")
+    return "soma"
+
+
+def avaliar_metrica(con, spec, semanas, criterio, semana_atual=None):
+    """Nota 0..1.5 de UMA métrica na janela, conforme o critério declarado.
+    Serve tanto para o resultado (que define o quadrante) quanto para as
+    secundárias (que só informam).
+
+    DOSE e MEDIÇÃO não se leem igual, e confundir as duas inverte o diagnóstico:
+      - dose (soma/media_dia): semana sem registro é ZERO, não é dado faltando.
+        Tratá-la como ausente faria "uma única semana boa em onze" pontuar 100%.
+      - medição (ultimo/media): semana sem registro é DESCONHECIDA, e a semana em
+        curso conta — o peso de hoje é fato, não meia semana somada.
+    """
+    vazio = {"nota": None, "serie": [], "ritmo": None}
+    if not criterio or not semanas:
+        return vazio
+    campo = criterio["metrica"]
+    esc = E.escopo_de(spec, campo)          # métrica da pessoa é lida fora do hábito
+    dose = agregacao_de(spec, campo) in ("soma", "media_dia")
+    janela = list(semanas)
+    if not dose and semana_atual and semana_atual not in janela:
+        janela.append(semana_atual)
+    vals = {r["semana"]: r["valor"] for r in con.execute(
+        "SELECT semana, valor FROM v_metricas_semanais WHERE escopo=? AND campo=?",
+        (esc, campo))}
+    serie = [{"semana": s, "valor": vals.get(s, 0.0 if dose else None)} for s in janela]
+    medidos = [x for x in serie if x["valor"] is not None]
+    nota, ritmo = None, None
+    if criterio.get("direcao"):
+        # Métrica com DIREÇÃO (a que precisa cair, ou subir, ao longo do
+        # tempo): o que importa é o RITMO, não bater um limiar semanal. Sem
+        # isto, uma meta declarada como "ficar abaixo de X" daria resultado
+        # zero em toda semana até o dia em que a linha fosse cruzada — e o
+        # coach leria meses de progresso real como fracasso.
+        if len(medidos) >= 2:
+            dv = medidos[-1]["valor"] - medidos[0]["valor"]
+            dsem = max(1, (date.fromisoformat(medidos[-1]["semana"])
+                           - date.fromisoformat(medidos[0]["semana"])).days / 7)
+            ritmo = dv / dsem
+            sinal = -1 if criterio["direcao"] == "descer" else 1
+            alvo_taxa = criterio.get("taxa_semanal")
+            if criterio["direcao"] == "manter":
+                tol = criterio.get("tolerancia", abs(alvo_taxa or 0.5))
+                nota = 1.0 if abs(ritmo) <= tol else max(0.0, tol / abs(ritmo))
+            elif alvo_taxa:
+                nota = max(0.0, min(1.5, (sinal * ritmo) / abs(alvo_taxa)))
+            else:
+                nota = 1.0 if sinal * ritmo > 0 else 0.0
+    elif criterio.get("min") is not None:
+        nota = sum(1 for x in medidos if x["valor"] >= criterio["min"]) / max(1, len(medidos))
+    elif criterio.get("max") is not None:
+        nota = sum(1 for x in medidos if x["valor"] <= criterio["max"]) / max(1, len(medidos))
+
+    return {"nota": nota, "serie": serie, "ritmo": ritmo}
+
+
 def medir(con, spec, ate=None, desde=None):
     """Adesão e resultado da janela da estratégia corrente. Semana em curso fica
     de fora: julgar semana pela metade é o jeito mais fácil de errar o diagnóstico."""
@@ -66,41 +128,20 @@ def medir(con, spec, ate=None, desde=None):
     adesao = sum(1 for s in por_semana if s["bateu"]) / n
 
     res_spec = spec["criterio_sucesso"].get("resultado")
-    resultado, serie_res, ritmo = None, [], None
-    if res_spec and semanas:
-        campo = res_spec["metrica"]
-        # escopo: métrica da pessoa (peso) é lida fora do hábito
-        esc = E.escopo_de(spec, campo)
-        vals = {r["semana"]: r["valor"] for r in con.execute(
-            "SELECT semana, valor FROM v_metricas_semanais WHERE escopo=? AND campo=?",
-            (esc, campo))}
-        serie_res = [{"semana": s, "valor": vals.get(s)} for s in semanas]
-        medidos = [x for x in serie_res if x["valor"] is not None]
+    atual = hoje_seg.isoformat()
+    avaliada = avaliar_metrica(con, spec, semanas, res_spec, atual)
+    resultado, serie_res, ritmo = avaliada["nota"], avaliada["serie"], avaliada["ritmo"]
 
-        if res_spec.get("direcao"):
-            # Métrica com DIREÇÃO (a que precisa cair, ou subir, ao longo do
-            # tempo): o que importa é o RITMO, não bater um limiar semanal. Sem
-            # isto, uma meta declarada como "ficar abaixo de X" daria resultado
-            # zero em toda semana até o dia em que a linha fosse cruzada — e o
-            # coach leria meses de progresso real como fracasso.
-            if len(medidos) >= 2:
-                dv = medidos[-1]["valor"] - medidos[0]["valor"]
-                dsem = max(1, (date.fromisoformat(medidos[-1]["semana"])
-                               - date.fromisoformat(medidos[0]["semana"])).days / 7)
-                ritmo = dv / dsem
-                sinal = -1 if res_spec["direcao"] == "descer" else 1
-                alvo_taxa = res_spec.get("taxa_semanal")
-                if res_spec["direcao"] == "manter":
-                    tol = res_spec.get("tolerancia", abs(alvo_taxa or 0.5))
-                    resultado = 1.0 if abs(ritmo) <= tol else max(0.0, tol / abs(ritmo))
-                elif alvo_taxa:
-                    resultado = max(0.0, min(1.5, (sinal * ritmo) / abs(alvo_taxa)))
-                else:
-                    resultado = 1.0 if sinal * ritmo > 0 else 0.0
-        elif res_spec.get("min") is not None:
-            resultado = sum(1 for x in medidos if x["valor"] >= res_spec["min"]) / max(1, len(medidos))
-        elif res_spec.get("max") is not None:
-            resultado = sum(1 for x in medidos if x["valor"] <= res_spec["max"]) / max(1, len(medidos))
+    # SECUNDÁRIAS: acompanhadas e reportadas, mas NÃO entram no quadrante. Servem
+    # para o caso em que o hábito contribui para um indicador sem ser a alavanca
+    # principal dele — julgar a estratégia por esse indicador seria cobrar do
+    # hábito errado.
+    secundarios = []
+    for sec in spec["criterio_sucesso"].get("secundarios", []) or []:
+        a = avaliar_metrica(con, spec, semanas, sec, atual)
+        secundarios.append({"metrica": sec["metrica"], "nota": a["nota"],
+                            "ritmo_semanal": a["ritmo"], "serie": a["serie"],
+                            "observacao": sec.get("nota", "")})
 
     obst = [dict(r) for r in con.execute(
         """SELECT obstaculo, SUM(n) n FROM v_obstaculos_semanais
@@ -118,7 +159,7 @@ def medir(con, spec, ate=None, desde=None):
             "adesao": round(adesao, 2),
             "resultado": None if resultado is None else round(resultado, 2),
             "ritmo_semanal": None if ritmo is None else round(ritmo, 3),
-            "criterio_resultado": res_spec,
+            "criterio_resultado": res_spec, "secundarios": secundarios,
             "resultado_declarado": bool(res_spec), "serie_resultado": serie_res,
             "obstaculos": obst, "silencios": silencios, "quadrante": quad,
             "semanas_avaliadas": len(por_semana)}
@@ -231,6 +272,9 @@ Como pensar:
 - 'nao_cabe': a estratégia não cabe na vida dela. Olhe os obstáculos e o que já foi tentado.
 - 'resultado_declarado' false: a estratégia não tem critério de resultado. Declarar um
   (decisao 'declarar_resultado') costuma valer mais que qualquer outro ajuste.
+- 'secundarios' são métricas ACOMPANHADAS que NÃO entram no quadrante: o hábito contribui
+  para elas sem ser a alavanca principal. Use como contexto e mencione se andarem, mas NUNCA
+  mude a estratégia porque um secundário não se moveu — seria cobrar do hábito errado.
 - 'ritmo_semanal' é a velocidade observada da métrica de resultado (negativo = caindo).
   Compare com a taxa_semanal esperada no critério: ritmo bom com adesão baixa significa
   que outra coisa está fazendo o trabalho, e vale entender o quê antes de comemorar.
