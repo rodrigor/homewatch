@@ -37,3 +37,6 @@ __pycache__/
 backups/
 web/finance/.secret
 reminders.json.lock
+
+# Estratégias de hábito (dados pessoais: motivação, gatilhos, histórico)
+habitos/estrategias/
