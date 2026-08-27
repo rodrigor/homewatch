@@ -24,6 +24,16 @@ sys.path.insert(0, DIR)
 import registro as R
 
 TIPOS_GATILHO = {"horario", "evento"}
+DIRECOES = {"subir", "descer", "manter"}
+# Um gatilho pode cobrar a sessão ou a MEDIÇÃO. Sem essa distinção, o critério
+# de resultado depende de um dado que ninguém lembra de registrar — e a malha
+# fica aberta exatamente no ponto que interessa.
+ALVOS_GATILHO = {"sessao", "medicao"}
+# Linguagem fechada das métricas derivadas. Fechada de propósito: é o que
+# permite ao conhecimento de domínio ("este campo só conta quando aquele outro
+# fica nesta faixa") morar no ARQUIVO da estratégia, como número, em vez de
+# virar código aqui dentro.
+OPERADORES = {"entre", "min", "max", "igual"}
 ESTADOS = {"ativo", "pausado", "suspenso"}
 AGREGACOES = {"soma", "media", "ultimo"}
 # Primitivas que a rotina sabe executar. Estratégia que peça outra coisa é
@@ -90,8 +100,44 @@ def validar(spec):
         raise Invalida("criterio_sucesso.adesao.min é obrigatório")
     if not isinstance(ad["min"], (int, float)) or ad["min"] <= 0:
         raise Invalida("criterio_sucesso.adesao.min deve ser > 0")
-    if cs.get("resultado") and "metrica" not in cs["resultado"]:
-        raise Invalida("criterio_sucesso.resultado precisa de 'metrica'")
+    res = cs.get("resultado")
+    if res:
+        if "metrica" not in res:
+            raise Invalida("criterio_sucesso.resultado precisa de 'metrica'")
+        if res.get("direcao") and res["direcao"] not in DIRECOES:
+            raise Invalida(f"direcao inválida: {res['direcao']} (use {sorted(DIRECOES)})")
+        if not any(k in res for k in ("min", "max", "direcao")):
+            raise Invalida("criterio_sucesso.resultado precisa de min, max ou direcao — "
+                           "sem isso não há como dizer se o resultado andou")
+        if res.get("taxa_semanal") is not None and not res.get("direcao"):
+            raise Invalida("taxa_semanal só faz sentido com direcao")
+        conhecidas = {m["campo"] for m in spec.get("medicoes", [])}
+        conhecidas |= {c["campo"] for c in spec.get("coleta", [])}
+        conhecidas |= {d["campo"] for d in spec.get("derivadas", [])}
+        if res["metrica"] not in conhecidas:
+            raise Invalida(f"criterio_sucesso.resultado aponta para '{res['metrica']}', que "
+                           f"não é coletada, medida nem derivada. Declarar uma métrica nova "
+                           f"é pedido de capacidade, não decisão do coach.")
+
+    for m in spec.get("medicoes", []):
+        if "campo" not in m:
+            raise Invalida(f"medição sem campo: {m}")
+        if m.get("agregacao", "ultimo") not in AGREGACOES:
+            raise Invalida(f"agregacao inválida em {m['campo']}: {m['agregacao']}")
+
+    campos_sessao = {c["campo"] for c in spec.get("coleta", [])}
+    for d in spec.get("derivadas", []):
+        if "campo" not in d or "de" not in d:
+            raise Invalida(f"derivada precisa de 'campo' e 'de': {d}")
+        if d["de"] not in campos_sessao:
+            raise Invalida(f"derivada {d['campo']} vem de '{d['de']}', que não está na coleta")
+        for campo_cond, cond in (d.get("quando") or {}).items():
+            if campo_cond not in campos_sessao:
+                raise Invalida(f"derivada {d['campo']} testa '{campo_cond}', fora da coleta")
+            desconhecidos = set(cond) - OPERADORES
+            if desconhecidos:
+                raise Invalida(f"operador desconhecido em {d['campo']}: {sorted(desconhecidos)} "
+                               f"(a rotina só sabe {sorted(OPERADORES)})")
 
     hz = spec["horizonte"]
     if hz.get("revisar_em"):
@@ -107,7 +153,16 @@ def validar(spec):
     if emoji and len(emoji) > 4:
         raise Invalida(f"emoji deve ser 1-2 caracteres: {emoji!r}")
 
+    declaradas = {m["campo"] for m in spec.get("medicoes", [])}
     for g in spec["gatilhos"]:
+        if g.get("para", "sessao") not in ALVOS_GATILHO:
+            raise Invalida(f"gatilho.para inválido: {g.get('para')} (use {sorted(ALVOS_GATILHO)})")
+        if g.get("para") == "medicao":
+            if g.get("campo") not in declaradas:
+                raise Invalida(f"gatilho de medição aponta para '{g.get('campo')}', "
+                               f"que não está em medicoes")
+            if int(g.get("cada_dias", 0)) < 1:
+                raise Invalida("gatilho de medição precisa de cada_dias >= 1")
         if g.get("tipo") not in TIPOS_GATILHO:
             raise Invalida(f"gatilho de tipo desconhecido: {g.get('tipo')} "
                            f"(a rotina só sabe {sorted(TIPOS_GATILHO)})")

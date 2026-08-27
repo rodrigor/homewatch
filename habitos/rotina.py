@@ -116,6 +116,15 @@ def lembretes_do_dia(con, habito, dia, gatilho=None):
 
 
 # ── o tick ───────────────────────────────────────────────────────────────────
+def medido_recentemente(con, habito, campo, dia, cada_dias):
+    ultima = con.execute("""SELECT MAX(data) d FROM metricas WHERE habito=? AND campo=?""",
+                         (habito, campo)).fetchone()["d"]
+    if not ultima:
+        return False
+    return (datetime.strptime(dia, "%Y-%m-%d")
+            - datetime.strptime(ultima, "%Y-%m-%d")).days < int(cada_dias)
+
+
 def processar_gatilhos(con, spec, agora, dry):
     habito, dia = spec["habito"], agora.date().isoformat()
     enviados = 0
@@ -124,11 +133,19 @@ def processar_gatilhos(con, spec, agora, dry):
     gates = spec["gates"]
     if lembretes_do_dia(con, habito, dia) >= int(gates.get("max_msgs_dia", 1)):
         return 0
-    if ja_registrou(con, habito, dia):
-        return 0                      # já fez (ou já disse que não fez) hoje
+    fez_hoje = ja_registrou(con, habito, dia)
     for i, g in enumerate(spec["gatilhos"]):
         if g.get("tipo") != "horario":
             continue                  # gatilho por evento entra na fatia de sensores
+        alvo = g.get("para", "sessao")
+        # sessão já registrada silencia o lembrete de sessão, mas não o de
+        # medição: são coisas diferentes e a segunda alimenta o critério de
+        # resultado.
+        if alvo == "sessao" and fez_hoje:
+            continue
+        if alvo == "medicao" and medido_recentemente(con, habito, g["campo"], dia,
+                                                     g.get("cada_dias", 7)):
+            continue
         if agora.isoweekday() not in (g.get("dias") or []):
             continue
         hh, mm = (int(x) for x in g["quando"].split(":"))
@@ -146,7 +163,7 @@ def processar_gatilhos(con, spec, agora, dry):
             if not dry:
                 R.grava_evento(con, habito, "lembrete", "rotina", dia,
                                {"gatilho": i, "msg": g.get("msg"), "texto": texto,
-                                "hora": agora.strftime("%H:%M")})
+                                "para": alvo, "hora": agora.strftime("%H:%M")})
                 con.commit()
     return enviados
 

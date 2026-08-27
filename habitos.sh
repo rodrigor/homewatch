@@ -4,7 +4,7 @@
 #
 #   habitos.sh log <habito> <valor|-> <unidade|-> ["nota"] [--data AAAA-MM-DD] [--m campo=valor]...
 #   habitos.sh falha <habito> [obstaculo] ["nota"] [--data ...]
-#   habitos.sh metrica <habito> <campo> <valor> [unidade] [classe]
+#   habitos.sh metrica <habito> <campo> <valor>       # medição declarada na spec
 #   habitos.sh interpretar <habito> "<texto livre>"   # LLM -> métricas
 #   habitos.sh tick [--dry-run] [--agora "AAAA-MM-DD HH:MM"]   # roda a estratégia
 #   habitos.sh pausar <habito> [ate] [motivo] | retomar <habito>
@@ -51,6 +51,14 @@ spec_do_campo(){ # <habito> <campo> -> "unidade:classe:agregacao" (vazio se não
 campos_validos(){ jq -r '[.coleta[]|select((.quando//"")!="falha")|
       "\(.campo)\(if .unidade then " ("+.unidade+")" else "" end)"]|join(", ")' "$EST/$1.json" 2>/dev/null; }
 
+spec_da_medicao(){ # <habito> <campo> -> "unidade|classe|agregacao" (bloco medicoes)
+  jq -r --arg c "$2" '(.medicoes // [])[]|select(.campo==$c)|
+      "\(.unidade // "")|\(.classe // "resultado")|\(.agregacao // "ultimo")"' \
+    "$EST/$1.json" 2>/dev/null | head -1
+}
+medicoes_validas(){ jq -r '[(.medicoes // [])[]|
+      "\(.campo)\(if .unidade then " ("+.unidade+")" else "" end)"]|join(", ")' "$EST/$1.json" 2>/dev/null; }
+
 metrica_arg(){ # <habito> <campo> <valor> -> "campo=valor:unidade:classe:agregacao"
   local d; d=$(spec_do_campo "$1" "$2")
   [ -z "$d" ] && { echo "campo '$2' não existe na estratégia de $1 (declarados: $(campos_validos "$1"))" >&2; return 1; }
@@ -91,13 +99,16 @@ case "$cmd" in
     [ -n "${3:-}" ] && args+=(--nota "$3")
     "$REG" "${args[@]}" >/dev/null && echo "ok: falha registrada em $h${2:+ ($2)}" ;;
 
-  metrica)
-    h="${1:?uso: habitos.sh metrica <habito> <campo> <valor> [unidade] [classe]}"
-    args=(metrica --habito "$h" --campo "${2:?campo}" --valor "${3:?valor}"
-          --origem "${HABITOS_ORIGEM:-manual}" --classe "${5:-resultado}")
-    [ -n "${4:-}" ] && args+=(--unidade "$4")
+  metrica) # medição (peso, exame, indicador) — declarada no bloco 'medicoes' da estratégia
+    h="${1:?uso: habitos.sh metrica <habito> <campo> <valor>}"; campo="${2:?campo}"; val="${3:?valor}"
+    d=$(spec_da_medicao "$h" "$campo")
+    [ -z "$d" ] && { echo "medição '$campo' não declarada na estratégia de $h (declaradas: $(medicoes_validas "$h"))" >&2; exit 1; }
+    IFS='|' read -r un cl ag <<< "$d"
+    args=(metrica --habito "$h" --campo "$campo" --valor "$val" --classe "$cl"
+          --agregacao "$ag" --origem "${HABITOS_ORIGEM:-manual}")
+    [ -n "$un" ] && args+=(--unidade "$un")
     mapfile -t df < <(data_flag); args+=(${df[@]+"${df[@]}"})
-    "$REG" "${args[@]}" >/dev/null && echo "ok: $2=$3 ${4:-} em $h" ;;
+    "$REG" "${args[@]}" >/dev/null && echo "ok: $campo=$val ${un} em $h" ;;
 
   status)
     h="${1:-}"
@@ -134,7 +145,8 @@ case "$cmd" in
   retomar) "$DIR/habitos/rotina.py" retomar "${1:?habito}" ;;
   validar) "$DIR/habitos/estrategia.py" validar "${1:?habito}" ;;
   ativas)  "$DIR/habitos/estrategia.py" ativas ;;
-  lint)    "$DIR/habitos/lint_nucleo.py" ;;   # o núcleo não pode saber de domínio   # o núcleo não pode saber de domínio
+  lint)    "$DIR/habitos/lint_nucleo.py" ;;   # o núcleo não pode saber de domínio
+  recalcular) "$DIR/habitos/registro.py" recalcular --habito "${1:?habito}" ;;   # o núcleo não pode saber de domínio
   semana)  h="${1:-}"; "$REG" semana ${h:+--habito "$h"} --n "${2:-12}" ;;
   eventos) h="${1:-}"; "$REG" eventos ${h:+--habito "$h"} --n "${2:-20}" ;;
   estrategia)

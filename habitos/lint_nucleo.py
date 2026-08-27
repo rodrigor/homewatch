@@ -35,8 +35,10 @@ NUCLEO = [
 
 # Termos que não existem fora de um domínio concreto.
 ABSOLUTOS = re.compile(
+    # (?<![\w]) e não \b: "minutos_zona2" tem underscore antes do termo, e o \b
+    # não enxerga fronteira ali — foi assim que um comentário meu escapou
     # exercício / saúde
-    r"\b(vo2|bpm|zona ?2|treino|exerc[íi]ci|muscula[çc][ãa]o|hipertrofia|"
+    r"(?<![a-zA-Z0-9])(vo2|bpm|zona ?2|treino|exerc[íi]ci|muscula[çc][ãa]o|hipertrofia|"
     r"ergom[ée]tric|hiit|imc|kcal|caloria|batimento|card[íi]aco|aer[óo]bic|"
     r"glicose|jejum|cigarro|medita[çc]|"
     # leitura / estudo

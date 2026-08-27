@@ -66,16 +66,39 @@ def medir(con, spec, ate=None, desde=None):
     adesao = sum(1 for s in por_semana if s["bateu"]) / n
 
     res_spec = spec["criterio_sucesso"].get("resultado")
-    resultado, serie_res = None, []
+    resultado, serie_res, ritmo = None, [], None
     if res_spec and semanas:
         campo = res_spec["metrica"]
         vals = {r["semana"]: r["valor"] for r in con.execute(
             "SELECT semana, valor FROM v_metricas_semanais WHERE habito=? AND campo=?",
             (habito, campo))}
-        serie_res = [{"semana": s, "valor": vals.get(s, 0)} for s in semanas]
-        if res_spec.get("min") is not None:
-            resultado = sum(1 for x in serie_res
-                            if (x["valor"] or 0) >= res_spec["min"]) / len(serie_res)
+        serie_res = [{"semana": s, "valor": vals.get(s)} for s in semanas]
+        medidos = [x for x in serie_res if x["valor"] is not None]
+
+        if res_spec.get("direcao"):
+            # Métrica com DIREÇÃO (a que precisa cair, ou subir, ao longo do
+            # tempo): o que importa é o RITMO, não bater um limiar semanal. Sem
+            # isto, uma meta declarada como "ficar abaixo de X" daria resultado
+            # zero em toda semana até o dia em que a linha fosse cruzada — e o
+            # coach leria meses de progresso real como fracasso.
+            if len(medidos) >= 2:
+                dv = medidos[-1]["valor"] - medidos[0]["valor"]
+                dsem = max(1, (date.fromisoformat(medidos[-1]["semana"])
+                               - date.fromisoformat(medidos[0]["semana"])).days / 7)
+                ritmo = dv / dsem
+                sinal = -1 if res_spec["direcao"] == "descer" else 1
+                alvo_taxa = res_spec.get("taxa_semanal")
+                if res_spec["direcao"] == "manter":
+                    tol = res_spec.get("tolerancia", abs(alvo_taxa or 0.5))
+                    resultado = 1.0 if abs(ritmo) <= tol else max(0.0, tol / abs(ritmo))
+                elif alvo_taxa:
+                    resultado = max(0.0, min(1.5, (sinal * ritmo) / abs(alvo_taxa)))
+                else:
+                    resultado = 1.0 if sinal * ritmo > 0 else 0.0
+        elif res_spec.get("min") is not None:
+            resultado = sum(1 for x in medidos if x["valor"] >= res_spec["min"]) / max(1, len(medidos))
+        elif res_spec.get("max") is not None:
+            resultado = sum(1 for x in medidos if x["valor"] <= res_spec["max"]) / max(1, len(medidos))
 
     obst = [dict(r) for r in con.execute(
         """SELECT obstaculo, SUM(n) n FROM v_obstaculos_semanais
@@ -90,7 +113,10 @@ def medir(con, spec, ate=None, desde=None):
     else:
         quad = "nao_cabe" if (resultado is None or resultado < 0.5) else "ruido"
     return {"de": de, "ate": ate, "semanas": por_semana, "meta": meta,
-            "adesao": round(adesao, 2), "resultado": resultado,
+            "adesao": round(adesao, 2),
+            "resultado": None if resultado is None else round(resultado, 2),
+            "ritmo_semanal": None if ritmo is None else round(ritmo, 3),
+            "criterio_resultado": res_spec,
             "resultado_declarado": bool(res_spec), "serie_resultado": serie_res,
             "obstaculos": obst, "silencios": silencios, "quadrante": quad,
             "semanas_avaliadas": len(por_semana)}
@@ -203,6 +229,9 @@ Como pensar:
 - 'nao_cabe': a estratégia não cabe na vida dela. Olhe os obstáculos e o que já foi tentado.
 - 'resultado_declarado' false: a estratégia não tem critério de resultado. Declarar um
   (decisao 'declarar_resultado') costuma valer mais que qualquer outro ajuste.
+- 'ritmo_semanal' é a velocidade observada da métrica de resultado (negativo = caindo).
+  Compare com a taxa_semanal esperada no critério: ritmo bom com adesão baixa significa
+  que outra coisa está fazendo o trabalho, e vale entender o quê antes de comemorar.
 - silêncios altos = dado faltando, não preguiça: pode ser hora de mudar a coleta ou perguntar.
 - NUNCA repita uma decisão que já falhou no histórico sem evidência nova.
 - No máximo {LIM['mudancas_por_revisao']} mudanças, e uma hipótese só.
@@ -217,7 +246,15 @@ Responda SÓ um JSON:
 
 Caminhos possíveis em "mudancas" (exemplos): "criterio_sucesso.adesao.min",
 "criterio_sucesso.resultado", "gatilhos[0].quando", "gatilhos[0].dias",
-"mensagens.lembrete", "horizonte.dwell_min_semanas". Use {{}} para não mudar nada."""
+"mensagens.lembrete", "horizonte.dwell_min_semanas". Use {{}} para não mudar nada.
+
+FORMA de criterio_sucesso.resultado (proposta fora disto é recusada na validação):
+{{"metrica": "<uma das declaradas em medicoes/coleta/derivadas da spec — não invente>",
+  "direcao": "subir"|"descer"|"manter",     // opcional; use para métrica que precisa andar
+  "taxa_semanal": <número POSITIVO>,         // opcional, só com direcao: ritmo esperado por semana
+  "min": <número> | "max": <número>,         // alternativa a direcao: limiar por semana
+  "alvo": <número>}}                          // opcional, informativo: a linha de chegada
+Pelo menos um entre min, max e direcao é obrigatório."""
     return llm.perguntar_json(
         prompt, ("diagnostico", "decisao", "mudancas", "mensagem"),
         modelo="opus", timeout=300, origem="coach")
@@ -298,11 +335,21 @@ def cmd_avaliar(a, con):
     mudancas = prop.get("mudancas") or {}
     resultado = {"medicao": medida, "diagnostico": prop.get("diagnostico"),
                  "decisao": prop.get("decisao"), "mudancas": mudancas}
-    if len(mudancas) > LIM["mudancas_por_revisao"]:
-        resultado["recusado"] = f"{len(mudancas)} mudanças (máx {LIM['mudancas_por_revisao']})"
+    def recusar(motivo):
+        """Proposta recusada ainda assim conversa: a revisão aconteceu, e o
+        diagnóstico vale mesmo sem a mudança. Silêncio aqui esconderia tanto um
+        coach confuso quanto uma semana que precisava de resposta."""
+        resultado["recusado"] = motivo
         if not a.dry_run:
-            registrar_avaliacao(con, spec, medida, prop, False, resultado["recusado"])
+            registrar_avaliacao(con, spec, medida, prop, False, motivo)
+            msg = (prop.get("mensagem") or "").strip() or mensagem_padrao(spec, medida, prop)
+            subprocess.run([TG, E.assinar(spec, msg)], capture_output=True, timeout=30)
+            resultado["mensagem"] = msg
+        print(f"proposta recusada: {motivo}", file=sys.stderr)
         return resultado
+
+    if len(mudancas) > LIM["mudancas_por_revisao"]:
+        return recusar(f"{len(mudancas)} mudanças (máx {LIM['mudancas_por_revisao']})")
 
     novo = aplicar_mudancas(spec, mudancas) if mudancas else None
     veredito, motivo = "auto", "sem mudanças"
@@ -319,10 +366,7 @@ def cmd_avaliar(a, con):
         except E.Invalida as e:
             erros.append(str(e))
         if erros:
-            resultado["recusado"] = "; ".join(erros)
-            if not a.dry_run:
-                registrar_avaliacao(con, spec, medida, prop, False, resultado["recusado"])
-            return resultado
+            return recusar("; ".join(erros))
         veredito, motivo = classificar_mudancas(caminhos_alterados(spec, novo))
     resultado["veredito"] = veredito
     resultado["motivo"] = motivo

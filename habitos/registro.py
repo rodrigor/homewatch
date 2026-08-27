@@ -37,6 +37,16 @@ def hoje():
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def carregar_spec(habito):
+    """Lê a estratégia sem importar o módulo (evita ciclo): só o que o registro
+    precisa saber para derivar."""
+    fp = os.path.join(DIR, "estrategias", f"{habito}.json")
+    try:
+        return json.load(open(fp))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def conectar(criar=True):
     os.makedirs(os.path.dirname(DB), exist_ok=True)
     novo = not os.path.exists(DB)
@@ -86,6 +96,47 @@ def grava_metrica(con, habito, campo, valor, unidade=None, classe="contexto",
     return cur.lastrowid
 
 
+def condicao_ok(cond, valor):
+    """Operadores da linguagem fechada de derivadas. Sem eval, sem código do
+    domínio: o núcleo só compara números que a estratégia declarou."""
+    if valor is None:
+        return False
+    if "entre" in cond:
+        a, b = cond["entre"]
+        if not (a <= valor <= b):
+            return False
+    if "min" in cond and valor < cond["min"]:
+        return False
+    if "max" in cond and valor > cond["max"]:
+        return False
+    if "igual" in cond and valor != cond["igual"]:
+        return False
+    return True
+
+
+def aplicar_derivadas(con, spec, habito, data, evento_id, valores, fonte="derivada"):
+    """Calcula as métricas derivadas de uma sessão a partir da spec.
+
+    A estratégia declara algo como "o valor deste campo só conta quando aquele
+    outro campo estiver nesta faixa". O núcleo não sabe o que os campos
+    significam: só sabe aplicar a condição declarada. Se a regra mudar, o dado
+    derivado é reconstruível por definição (habitos.sh recalcular).
+    """
+    criadas = []
+    for d in spec.get("derivadas", []):
+        base = valores.get(d["de"])
+        if base is None:
+            continue
+        if not all(condicao_ok(cond, valores.get(campo))
+                   for campo, cond in (d.get("quando") or {}).items()):
+            continue
+        criadas.append(grava_metrica(
+            con, habito, d["campo"], base, d.get("unidade"),
+            d.get("classe", "resultado"), fonte, data, evento_id,
+            agregacao=d.get("agregacao", "soma")))
+    return criadas
+
+
 def parse_metricas(itens):
     """campo=valor[:unidade[:classe]] -> lista de dicts."""
     out = []
@@ -110,8 +161,19 @@ def cmd_sessao(a, con):
     ids = [grava_metrica(con, a.habito, m["campo"], m["valor"], m["unidade"],
                          m["classe"], a.origem, a.data, eid, agregacao=m["agregacao"])
            for m in metricas]
+    derivadas = []
+    spec = carregar_spec(a.habito)
+    if spec:
+        valores = {}
+        for m in metricas:
+            try:
+                valores[m["campo"]] = float(m["valor"])
+            except (TypeError, ValueError):
+                pass
+        derivadas = aplicar_derivadas(con, spec, a.habito, a.data or hoje(), eid, valores)
     con.commit()
-    return {"evento": eid, "metricas": ids, "data": a.data or hoje()}
+    return {"evento": eid, "metricas": ids, "derivadas": derivadas,
+            "data": a.data or hoje()}
 
 
 def cmd_falha(a, con):
@@ -197,6 +259,30 @@ def cmd_eventos(a, con):
     return [dict(r) for r in rows]
 
 
+def cmd_recalcular(a, con):
+    """Refaz as métricas derivadas de todas as sessões do hábito. Dado derivado
+    é reconstruível: se a regra na estratégia mudar, isto realinha o passado sem
+    tocar nos fatos crus (que continuam intocados em `eventos`)."""
+    spec = carregar_spec(a.habito)
+    if not spec:
+        sys.exit(f"sem estratégia para '{a.habito}'")
+    campos = [d["campo"] for d in spec.get("derivadas", [])]
+    if not campos:
+        return {"derivadas": 0, "aviso": "a estratégia não declara nenhuma derivada"}
+    marks = ",".join("?" * len(campos))
+    apagadas = con.execute(
+        f"DELETE FROM metricas WHERE habito=? AND fonte='derivada' AND campo IN ({marks})",
+        [a.habito] + campos).rowcount
+    criadas = 0
+    for ev in con.execute("""SELECT id, data FROM eventos WHERE habito=? AND tipo='sessao'""",
+                          (a.habito,)).fetchall():
+        valores = {r["campo"]: r["valor_num"] for r in con.execute(
+            "SELECT campo, valor_num FROM metricas WHERE evento_id=?", (ev["id"],))}
+        criadas += len(aplicar_derivadas(con, spec, a.habito, ev["data"], ev["id"], valores))
+    con.commit()
+    return {"apagadas": apagadas, "criadas": criadas, "campos": campos}
+
+
 def cmd_consulta(a, con):
     sql = a.sql.strip()
     # Guard-rail: o coach vai consultar por aqui; leitura é tudo que ele precisa.
@@ -241,12 +327,15 @@ def main():
 
     sp = sub.add_parser("consulta", help="SELECT livre (leitura)"); sp.add_argument("sql")
 
+    sp = sub.add_parser("recalcular", help="refaz as métricas derivadas do hábito")
+    sp.add_argument("--habito", required=True)
+
     a = p.parse_args()
     con = conectar()
     fn = {"init": lambda a, c: {"db": DB, "ok": True},
           "sessao": cmd_sessao, "falha": cmd_falha, "evento": cmd_evento,
           "metrica": cmd_metrica, "semana": cmd_semana, "eventos": cmd_eventos,
-          "consulta": cmd_consulta}[a.cmd]
+          "consulta": cmd_consulta, "recalcular": cmd_recalcular}[a.cmd]
     print(json.dumps(fn(a, con), ensure_ascii=False, indent=2))
 
 
