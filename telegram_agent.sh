@@ -19,6 +19,36 @@ get_model(){ cat "$MODEL_FILE" 2>/dev/null || echo "${CLAUDE_MODEL:-sonnet}"; }
 WORKDIR="$DIR/agentwork"   # sessão isolada do agente (não colide com a sessão interativa em /home/rodrigor)
 mkdir -p "$STATE"
 
+# Reset automático da sessão por tamanho (backlog #3253): sessão gorda (o .jsonl
+# em ~/.claude/projects) deixa o claude perto do timeout de 180s no Pi. Acima do
+# limite o PIrrai avisa; o reset só acontece com a conversa ociosa (nunca no meio
+# de uma interação). O .jsonl antigo fica no disco — só a flag de sessão cai.
+SESSION_MAX_BYTES=$((2*1024*1024))
+SESSION_IDLE_SECS=1800
+SESSION_PROJ_DIR="$HOME/.claude/projects/-home-rodrigor-homewatch-agentwork"
+SESSION_WARNED="$STATE/session_reset_warned"
+
+check_session_size(){
+  [ -f "$SESSION_FLAG" ] || { rm -f "$SESSION_WARNED"; return 0; }
+  local f size last now
+  f=$(ls -t "$SESSION_PROJ_DIR"/*.jsonl 2>/dev/null | head -1)
+  [ -n "$f" ] || return 0
+  size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+  if [ "$size" -le "$SESSION_MAX_BYTES" ]; then rm -f "$SESSION_WARNED"; return 0; fi
+  if [ ! -f "$SESSION_WARNED" ]; then
+    touch "$SESSION_WARNED"
+    tg_html "$TELEGRAM_CHAT_ID" "🧹 Nossa conversa acumulada passou de $((SESSION_MAX_BYTES/1024/1024)) MB e começa a deixar as respostas lentas. Vou reiniciar o contexto na próxima pausa (uns $((SESSION_IDLE_SECS/60)) min sem mensagens). Se preferir agora, mande /reset."
+    return 0
+  fi
+  # ocioso = última mensagem processada (mtime do offset) há mais de SESSION_IDLE_SECS
+  now=$(date +%s)
+  last=$(stat -c%Y "$OFFSET_FILE" 2>/dev/null || echo 0)
+  if [ $((now - last)) -ge "$SESSION_IDLE_SECS" ]; then
+    rm -f "$SESSION_FLAG" "$SESSION_WARNED"
+    tg_html "$TELEGRAM_CHAT_ID" "🧹 Contexto reiniciado. O histórico antigo segue guardado no Pi; a próxima mensagem começa conversa nova."
+  fi
+}
+
 # mata heartbeat/status órfãos quando o script morre (kill do systemd, set -u etc.)
 cleanup(){ [ -n "${HBPID:-}" ] && kill "$HBPID" 2>/dev/null; [ -n "${STATPID:-}" ] && kill "$STATPID" 2>/dev/null; }
 trap cleanup EXIT
@@ -417,6 +447,7 @@ while true; do
   check_new_devices
   process_reminders
   process_screen_nudges
+  check_session_size
   echo "$(date +%s)" > "$STATE/heartbeat"   # watchdog: prova de vida do loop
   RESP=$(curl -s --max-time 60 -G "$API/getUpdates" --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=50" --data-urlencode "allowed_updates=$ALLOWED_UPDATES")
   [ -z "$RESP" ] && sleep 2 && continue
