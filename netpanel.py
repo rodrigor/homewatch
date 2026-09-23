@@ -2,7 +2,8 @@
 """netpanel — painel dos links de internet no display USB (Turing Smart Screen 3.5").
 
 Lê o ER605 por SNMPv3 (credenciais do routerwatch.env) e mostra, por operadora:
-status do link, se é a rota padrão, taxa de download/upload e histórico curto.
+status do link, se é a rota padrão, o último speedtest, a taxa atual de
+download/upload e o gráfico das últimas 24 h (do banco do routerwatch).
 
 O agente net-snmp do ER605 só atualiza os contadores de interface a cada ~15 s
 (cache interno). Por isso consultamos a cada 1 s só pra detectar o instante exato
@@ -21,7 +22,6 @@ import sqlite3
 import subprocess
 import sys
 import time
-from collections import deque
 from datetime import datetime
 
 LIB = "/home/rodrigor/turing-screen"
@@ -33,7 +33,7 @@ DB = os.environ.get("ROUTERWATCH_DB", "/var/lib/routerwatch/routerwatch.db")
 PORT = os.environ.get("PANEL_PORT", "/dev/serial/by-id/usb-2017-2-25_UsbMonitor_USB35INCHIPSV2-if00")
 BRIGHTNESS = int(os.environ.get("PANEL_BRIGHTNESS", "30"))
 W, H = 480, 320
-HIST = 40  # amostras no gráfico (~15 s cada → ~10 min)
+BINS = 102  # faixas do gráfico de 24 h (~14 min cada, 2 px)
 
 # traffic = interface cujos contadores medem o link (in = download)
 # l3      = interface que recebe o IP da operadora (sem IP → link sem internet)
@@ -121,7 +121,7 @@ def speedtests():
     try:
         con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
         rows = con.execute(
-            "SELECT wan, down_bps, up_bps, ping_ms FROM speedtest s WHERE ok=1 "
+            "SELECT wan, ts, down_bps, up_bps, ping_ms FROM speedtest s WHERE ok=1 "
             "AND ts > strftime('%s','now') - 172800 "
             "AND ts = (SELECT MAX(ts) FROM speedtest WHERE wan=s.wan AND ok=1)").fetchall()
         con.close()
@@ -145,21 +145,24 @@ def fmt_rate(bps):
 class State:
     def __init__(self):
         self.links = {ln["key"]: dict(status="?", active=False, ip="", down=None, up=None,
-                                      hist=deque(maxlen=HIST), last=None) for ln in LINKS}
+                                      last=None) for ln in LINKS}
         self.load5 = None
         self.last_ok = 0.0     # último poll SNMP bem-sucedido
         self.speed = {}
+        self.day = {}          # key -> [(down, up) | None] das últimas 24 h
 
 
 class Panel:
     def __init__(self):
         f = f"{LIB}/res/fonts"
-        self.f_big = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-Bold.ttf", 34)
+        self.f_big = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-Bold.ttf", 30)
         self.f_mid = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-SemiBold.ttf", 22)
         self.f_name = ImageFont.truetype(f"{f}/roboto/Roboto-Black.ttf", 20)
         self.f_lbl = ImageFont.truetype(f"{f}/roboto/Roboto-Medium.ttf", 13)
         self.f_sm = ImageFont.truetype(f"{f}/roboto/Roboto-Regular.ttf", 12)
         self.f_smono = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-Regular.ttf", 11)
+        self.f_cap = ImageFont.truetype(f"{f}/roboto/Roboto-Medium.ttf", 10)
+        self.f_now = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-SemiBold.ttf", 18)
         self.f_clock = ImageFont.truetype(f"{f}/jetbrains-mono/JetBrainsMono-Bold.ttf", 22)
 
     def render(self, st: State):
@@ -199,61 +202,120 @@ class Panel:
 
     def card(self, d, st, ln, x, y, w, h):
         s = st.links[ln["key"]]
+        live = s["status"] == "up"
         d.rounded_rectangle((x, y, x + w, y + h), 8, fill=CARD)
         d.rounded_rectangle((x, y, x + w, y + 4), 2, fill=ln["color"])
         d.text((x + 12, y + 12), ln["name"], font=self.f_name, fill=ln["text"])
 
-        status = s["status"]
         col, lbl = {"up": (GREEN, "ONLINE"), "down": (RED, "OFFLINE"),
-                    "noip": (AMBER, "SEM IP")}.get(status, (MUTED, "…"))
+                    "noip": (AMBER, "SEM IP")}.get(s["status"], (MUTED, "…"))
         tw = d.textlength(lbl, font=self.f_lbl)
         px = x + w - 12 - tw - 22
         d.rounded_rectangle((px, y + 13, x + w - 10, y + 33), 10, outline=col, width=1)
         d.ellipse((px + 7, y + 19, px + 15, y + 27), fill=col)
         d.text((px + 19, y + 15), lbl, font=self.f_lbl, fill=col)
 
-        role = "em uso" if s["active"] else ("reserva" if status == "up" else "fora do ar")
+        role = "em uso" if s["active"] else ("reserva" if live else "fora do ar")
         sub = role + (f"  ·  {s['ip']}" if s["ip"] else "")
-        d.text((x + 12, y + 40), sub, font=self.f_sm, fill=FG if s["active"] else MUTED)
+        d.text((x + 12, y + 38), sub, font=self.f_sm, fill=FG if s["active"] else MUTED)
 
-        live = status == "up"
-        for row, (arrow, val, font, yy) in enumerate(
-                (("↓", s["down"], self.f_big, y + 60), ("↑", s["up"], self.f_mid, y + 104))):
-            num, unit = fmt_rate(val if live else None)
-            c = FG if live else MUTED
-            d.text((x + 12, yy + (6 if row == 0 else 2)), arrow, font=self.f_mid, fill=ln["text"] if live else MUTED)
-            d.text((x + 36, yy), num, font=font, fill=c)
-            d.text((x + 40 + d.textlength(num, font=font), yy + (18 if row == 0 else 9)), unit,
-                   font=self.f_lbl, fill=MUTED)
-
-        # Gráfico: barras = download, linha = upload
-        gx, gy, gw, gh = x + 12, y + 140, w - 24, 64
-        d.line((gx, gy + gh, gx + gw, gy + gh), fill=LINE)
-        hist = list(s["hist"])
-        if hist:
-            top = max(1e6, max(max(a, b) for a, b in hist))
-            bw = gw / HIST
-            off = HIST - len(hist)
-            dim = tuple(int(c * 0.55 + b * 0.45) for c, b in zip(ln["color"], CARD))
-            pts = []
-            for k, (dn, upv) in enumerate(hist):
-                bx = gx + (off + k) * bw
-                bh = dn / top * gh
-                if bh >= 1:
-                    d.rectangle((bx + 0.5, gy + gh - bh, bx + bw - 1, gy + gh - 1), fill=dim)
-                pts.append((bx + bw / 2, gy + gh - upv / top * gh))
-            if len(pts) > 1:
-                d.line(pts, fill=ln["text"], width=2)
-            d.text((gx + gw, gy - 2), fmt_rate(top)[0] + " " + fmt_rate(top)[1], font=self.f_sm,
-                   fill=MUTED, anchor="ra")
-
+        # Banda contratada/medida: último speedtest
         sp = st.speed.get(ln["key"])
         if sp:
-            dn, upv, ping = sp
-            txt = f"speedtest ↓{dn / 1e6:.0f} ↑{upv / 1e6:.0f} Mbps · {ping:.0f}ms"
+            ts, dn, upv, ping = sp
+            d.text((x + 12, y + 60), f"SPEEDTEST · {ago(ts)} · {ping:.0f} ms", font=self.f_cap, fill=MUTED)
+            c = FG if live else MUTED
+            xx = x + 12
+            for arrow, v in (("↓", dn), ("↑", upv)):
+                d.text((xx, y + 76), arrow, font=self.f_mid, fill=ln["text"] if live else MUTED)
+                xx += d.textlength(arrow, font=self.f_mid) + 2
+                num = f"{v / 1e6:.0f}"
+                d.text((xx, y + 71), num, font=self.f_big, fill=c)
+                xx += d.textlength(num, font=self.f_big) + 12
+            d.text((xx - 6, y + 87), "Mbps", font=self.f_lbl, fill=MUTED)
         else:
-            txt = "speedtest  sem dados recentes"
-        d.text((x + 12, y + h - 24), txt, font=self.f_smono, fill=MUTED)
+            d.text((x + 12, y + 60), "SPEEDTEST", font=self.f_cap, fill=MUTED)
+            d.text((x + 12, y + 80), "sem medição recente", font=self.f_lbl, fill=MUTED)
+
+        # Uso atual (média de ~15 s)
+        d.text((x + 12, y + 118), "AGORA", font=self.f_cap, fill=MUTED)
+        xx = x + 12
+        for arrow, v in (("↓", s["down"]), ("↑", s["up"])):
+            num, unit = fmt_rate(v if live else None)
+            d.text((xx, y + 131), f"{arrow}{num}", font=self.f_now, fill=FG if live else MUTED)
+            xx += d.textlength(f"{arrow}{num}", font=self.f_now) + 3
+            d.text((xx, y + 137), unit, font=self.f_sm, fill=MUTED)
+            xx += d.textlength(unit, font=self.f_sm) + 12
+
+        # Gráfico 24 h: barras = download, linha = upload (média de cada faixa)
+        gx, gy, gw, gh = x + 12, y + 166, w - 24, 50
+        d.line((gx, gy + gh, gx + gw, gy + gh), fill=LINE)
+        for frac in (0.25, 0.5, 0.75):
+            tx = gx + gw * frac
+            d.line((tx, gy + gh, tx, gy + gh + 2), fill=LINE)
+        hist = st.day.get(ln["key"], [])
+        vals = [v for v in hist if v]
+        if vals:
+            top = max(1e6, max(max(a, b) for a, b in vals))
+            bw = gw / len(hist)
+            dim = tuple(int(c * 0.55 + b * 0.45) for c, b in zip(ln["color"], CARD))
+            seg = []
+            for k, v in enumerate(hist):
+                bx = gx + k * bw
+                if v is None:
+                    if len(seg) > 1:
+                        d.line(seg, fill=ln["text"], width=1)
+                    seg = []
+                    continue
+                bh = v[0] / top * gh
+                if bh >= 1:
+                    d.rectangle((bx, gy + gh - bh, bx + max(bw - 0.6, 0.6), gy + gh - 1), fill=dim)
+                seg.append((bx + bw / 2, gy + gh - v[1] / top * gh))
+            if len(seg) > 1:
+                d.line(seg, fill=ln["text"], width=1)
+            num, unit = fmt_rate(top)
+            d.text((gx + gw, gy - 3), f"{num} {unit}", font=self.f_cap, fill=MUTED, anchor="ra")
+        d.text((gx, gy + gh + 4), "24 h", font=self.f_cap, fill=MUTED)
+        d.text((gx + gw / 2, gy + gh + 4), "12 h", font=self.f_cap, fill=MUTED, anchor="ma")
+        d.text((gx + gw, gy + gh + 4), "agora", font=self.f_cap, fill=MUTED, anchor="ra")
+
+
+def ago(ts):
+    m = int((time.time() - ts) / 60)
+    return f"há {m} min" if m < 60 else f"há {m // 60} h"
+
+
+def day_history(bins):
+    """Taxa média (down, up) em bps de cada WAN nas últimas 24 h, em `bins` faixas.
+    Faixa sem amostra válida → None. Fonte: snap do routerwatch (1 amostra/min)."""
+    now = int(time.time())
+    start = now - 86400
+    try:
+        con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
+        rows = con.execute("SELECT ts, claro_in, claro_out, vivo_in, vivo_out, claro_oper, vivo_oper FROM snap "
+                           "WHERE ts >= ? ORDER BY ts", (start - 120,)).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return {}
+    acc = {k: [[0.0, 0.0, 0.0] for _ in range(bins)] for k in ("claro", "vivo")}
+    for prev, cur in zip(rows, rows[1:]):
+        dt = cur[0] - prev[0]
+        if not 0 < dt <= 300 or cur[0] < start:
+            continue
+        b = min(bins - 1, (cur[0] - start) * bins // 86400)
+        for key, i, op in (("claro", 1, 5), ("vivo", 3, 6)):
+            if cur[op] != 1:  # link fora: deixa a faixa vazia em vez de zero
+                continue
+            if None in (prev[i], prev[i + 1], cur[i], cur[i + 1]):
+                continue
+            di, do = cur[i] - prev[i], cur[i + 1] - prev[i + 1]
+            if di < 0 or do < 0:  # contador zerou / trocou de interface
+                continue
+            a = acc[key][b]
+            a[0] += di * 8
+            a[1] += do * 8
+            a[2] += dt
+    return {k: [(a[0] / a[2], a[1] / a[2]) if a[2] else None for a in v] for k, v in acc.items()}
 
 
 def pi_temp():
@@ -297,7 +359,6 @@ def update(router: Router, st: State, addrs):
             if dt > 0.5:
                 s["down"] = (cin - last[1]) * 8 / dt
                 s["up"] = (cout - last[2]) * 8 / dt
-                s["hist"].append((s["down"], s["up"]))
             s["last"] = (now, cin, cout)
     return True
 
@@ -312,6 +373,7 @@ def main():
         router.resolve()
         addrs = router.addrs()
         st.speed = speedtests()
+        st.day = day_history(BINS)
         for _ in range(35):  # espera ~2 atualizações do cache do agente
             update(router, st, addrs)
             time.sleep(1)
@@ -337,7 +399,7 @@ def main():
     signal.signal(signal.SIGINT, bye)
 
     prev = None
-    addrs, t_addrs, t_resolve, t_speed = {}, 0.0, 0.0, 0.0
+    addrs, t_addrs, t_resolve, t_speed, t_day = {}, 0.0, 0.0, 0.0, 0.0
     while not stop:
         t0 = time.monotonic()
         try:
@@ -351,6 +413,9 @@ def main():
                 router.idx = {}  # força re-resolver na próxima volta
         except (subprocess.SubprocessError, OSError) as e:
             print(f"netpanel: erro SNMP: {e}", file=sys.stderr)
+        if t0 - t_day > 60 or not t_day:
+            st.day = day_history(BINS)
+            t_day = t0
         if t0 - t_speed > 600:
             st.speed = speedtests()
             t_speed = t0

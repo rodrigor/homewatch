@@ -16,9 +16,18 @@ source "$ENV_FILE"
 
 SNMP=(-v3 -l "${SNMP_SEC_LEVEL}" -u "${SNMP_USER}" -a "${SNMP_AUTH_PROTO}" -A "${SNMP_AUTH_PASS}")
 H="${ROUTER_HOST}"
-CL="${IFINDEX_CLARO}"   # Claro  (WAN dedicada)
-VI="${IFINDEX_VIVO}"    # Vivo   (WAN/LAN1)
-LN="${IFINDEX_LAN}"     # LAN
+# ifIndex resolvido pelo nome (ifDescr "default/inf.4094" etc.); fallback no IFINDEX_*
+DESCR=$(snmpwalk "${SNMP[@]}" -On -Oq "$H" 1.3.6.1.2.1.2.2.1.2 2>/dev/null | tr -d '"' || true)
+ifidx(){ # $1=nome  $2=fallback
+  local i=""
+  [ -n "$1" ] && i=$(awk -v n="$1" '{sub(/.*\//,"",$2)} $2==n {sub(/.*\./,"",$1); print $1; exit}' <<<"$DESCR")
+  printf "%s" "${i:-$2}"
+}
+CL=$(ifidx "${IFNAME_CLARO:-}" "${IFINDEX_CLARO}")   # Claro
+VI=$(ifidx "${IFNAME_VIVO:-}"  "${IFINDEX_VIVO}")    # Vivo
+LN=$(ifidx "${IFNAME_LAN:-}"   "${IFINDEX_LAN}")     # LAN
+CL3=$(ifidx "${IFNAME_CLARO_L3:-}" "$CL")            # interface com o IP da Claro
+VI3=$(ifidx "${IFNAME_VIVO_L3:-}"  "$VI")            # idem Vivo (PPPoE)
 
 # --- schema ---
 sqlite3 "$DB" <<'SQL'
@@ -52,6 +61,15 @@ VIVO_IN="${V[4]}";   VIVO_OUT="${V[5]}";   VIVO_OPER="${V[6]}";   VIVO_INERR="${
 LAN_IN="${V[8]}";    LAN_OUT="${V[9]}";    LAN_OPER="${V[10]}"
 UPTIME="${V[11]}"    # timeticks (1/100 s)
 
+# Link sem IP da operadora (PPPoE caído, DHCP sem lease) conta como down (2),
+# mesmo com a VLAN de pé — é o que importa pros alertas.
+ADDR_IFS=$(snmpwalk "${SNMP[@]}" -Oqv "$H" 1.3.6.1.2.1.4.20.1.2 2>/dev/null || true)
+has_ip(){ grep -qx "$1" <<<"$ADDR_IFS"; }
+if [ -n "$ADDR_IFS" ]; then
+  [ "$CLARO_OPER" = 1 ] && ! has_ip "$CL3" && CLARO_OPER=2
+  [ "$VIVO_OPER" = 1 ]  && ! has_ip "$VI3" && VIVO_OPER=2
+fi
+
 # CPU = média do hrProcessorLoad entre os núcleos
 CPU=$(snmpwalk "${SNMP[@]}" -Oqv "$H" 1.3.6.1.2.1.25.3.3.1.2 2>/dev/null \
       | awk '{s+=$1; n++} END{ if(n>0) printf "%.1f", s/n; else print "" }')
@@ -66,13 +84,18 @@ read -r LOAD1 LOAD5 LOAD15 < <(snmpget "${SNMP[@]}" -Oqv "$H" \
   1.3.6.1.4.1.2021.10.1.3.1 1.3.6.1.4.1.2021.10.1.3.2 1.3.6.1.4.1.2021.10.1.3.3 \
   2>/dev/null | tr -d '"' | paste -sd' ')
 
-# WAN ativa = nexthop da rota default (0.0.0.0). Mapeia gateway -> operadora.
-GW=$(snmpget "${SNMP[@]}" -Oqv "$H" 1.3.6.1.2.1.4.21.1.7.0.0.0.0 2>/dev/null | tr -d '"')
-case "$GW" in
-  "${GW_CLARO:-192.168.15.1}") ACTIVE_WAN=claro ;;
-  "${GW_VIVO:-192.168.21.1}")  ACTIVE_WAN=vivo  ;;
-  "")                          ACTIVE_WAN="" ;;
-  *)                           ACTIVE_WAN="$GW" ;;
+# WAN ativa = interface da rota default (0.0.0.0); fallback pelo gateway.
+read -r RIF GW < <(snmpget "${SNMP[@]}" -Oqv "$H" \
+  1.3.6.1.2.1.4.21.1.2.0.0.0.0 1.3.6.1.2.1.4.21.1.7.0.0.0.0 2>/dev/null | tr -d '"' | paste -sd' ')
+case "${RIF:-}" in
+  "$CL"|"$CL3") ACTIVE_WAN=claro ;;
+  "$VI"|"$VI3") ACTIVE_WAN=vivo  ;;
+  *)
+    case "${GW:-}" in
+      "${GW_CLARO:-192.168.21.1}") ACTIVE_WAN=claro ;;
+      "${GW_VIVO:-192.168.15.1}")  ACTIVE_WAN=vivo  ;;
+      *)                           ACTIVE_WAN="${GW:-}" ;;
+    esac ;;
 esac
 
 TS=$(date +%s)
