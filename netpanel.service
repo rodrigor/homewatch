@@ -1,0 +1,17 @@
+[Unit]
+Description=PIrrai — painel dos links de internet no display USB (Turing 3.5")
+After=network-online.target
+Wants=network-online.target
+Conflicts=turing-screen.service
+
+[Service]
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+WorkingDirectory=/home/rodrigor/turing-screen
+ExecStart=/home/rodrigor/homewatch/netpanel.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
