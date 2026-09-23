@@ -325,7 +325,8 @@ def main():
     lcd.Reset()
     lcd.InitializeComm()
     lcd.SetBrightness(level=BRIGHTNESS)
-    lcd.SetOrientation(orientation=Orientation.LANDSCAPE)
+    # display montado de ponta-cabeça no rack
+    lcd.SetOrientation(orientation=Orientation.REVERSE_LANDSCAPE)
 
     stop = False
 
