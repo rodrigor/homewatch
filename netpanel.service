@@ -8,8 +8,8 @@ Conflicts=turing-screen.service
 User=rodrigor
 Group=rodrigor
 Environment=HOME=/home/rodrigor
-# Brilho 0-100 (era 30, o Rodrigo achou forte)
-Environment=PANEL_BRIGHTNESS=12
+# Brilho 0-100
+Environment=PANEL_BRIGHTNESS=20
 WorkingDirectory=/home/rodrigor/turing-screen
 ExecStart=/home/rodrigor/homewatch/netpanel.py
 Restart=always
