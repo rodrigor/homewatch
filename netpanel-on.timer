@@ -1,0 +1,10 @@
+[Unit]
+Description=PIrrai: liga o display USB às 06:00
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+Unit=netpanel-power@liga.service
+
+[Install]
+WantedBy=timers.target

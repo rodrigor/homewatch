@@ -1,0 +1,9 @@
+[Unit]
+Description=PIrrai: display USB (netpanel) %i pelo horário
+
+[Service]
+Type=oneshot
+User=rodrigor
+Group=rodrigor
+Environment=HOME=/home/rodrigor
+ExecStart=/home/rodrigor/homewatch/display.sh %i

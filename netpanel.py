@@ -16,6 +16,7 @@ Uso:
   netpanel.py            # roda no display
   netpanel.py --preview  # gera netpanel-preview.png (sem display) e sai
 """
+import json
 import os
 import signal
 import sqlite3
@@ -31,7 +32,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont  # noqa: E402
 DIR = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get("ROUTERWATCH_DB", "/var/lib/routerwatch/routerwatch.db")
 PORT = os.environ.get("PANEL_PORT", "/dev/serial/by-id/usb-2017-2-25_UsbMonitor_USB35INCHIPSV2-if00")
-BRIGHTNESS = int(os.environ.get("PANEL_BRIGHTNESS", "30"))
+# Brilho e liga/desliga: escritos pelo display.sh, que reinicia o serviço a cada
+# mudança. Lido só na partida. Sobrevive a reboot.
+CTL = os.path.expanduser("~/.local/state/netpanel/ctl.json")
+DEFAULT_CTL = {"brightness": 20, "on": True}
 W, H = 480, 320
 BINS = 102  # faixas do gráfico de 24 h (~14 min cada, 2 px)
 
@@ -363,6 +367,16 @@ def update(router: Router, st: State, addrs):
     return True
 
 
+def read_ctl():
+    try:
+        with open(CTL) as f:
+            c = json.load(f)
+        b = int(c.get("brightness", DEFAULT_CTL["brightness"]))
+        return {"brightness": max(0, min(100, b)), "on": bool(c.get("on", True))}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return dict(DEFAULT_CTL)
+
+
 def main():
     env = load_env(os.path.join(DIR, "routerwatch.env"))
     router = Router(env)
@@ -386,7 +400,13 @@ def main():
     lcd = LcdCommRevA(com_port=PORT, display_width=320, display_height=480)
     lcd.Reset()
     lcd.InitializeComm()
-    lcd.SetBrightness(level=BRIGHTNESS)
+    ctl = read_ctl()
+    lcd.SetBrightness(level=ctl["brightness"] if ctl["on"] else 0)
+    if not ctl["on"]:
+        # tela desligada: fica parado até o display.sh reiniciar o serviço
+        lcd.ScreenOff()
+        signal.sigwait({signal.SIGTERM, signal.SIGINT})
+        return
     # display montado de ponta-cabeça no rack
     lcd.SetOrientation(orientation=Orientation.REVERSE_LANDSCAPE)
 

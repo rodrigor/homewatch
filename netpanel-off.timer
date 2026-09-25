@@ -1,0 +1,9 @@
+[Unit]
+Description=PIrrai: desliga o display USB às 23:59
+
+[Timer]
+OnCalendar=*-*-* 23:59:00
+Unit=netpanel-power@desliga.service
+
+[Install]
+WantedBy=timers.target
