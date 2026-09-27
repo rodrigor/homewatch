@@ -183,6 +183,22 @@
       "status": "concluido",
       "created": "2026-08-10",
       "notes": ""
+    },
+    {
+      "id": "1789953253",
+      "title": "Reset automático da sessão do agente por tamanho",
+      "description": "Quando o .jsonl da sessão ativa do agente (em ~/.claude/projects/-home-rodrigor-homewatch-agentwork/) passar de 2 MB, resetar a sessão — mas NUNCA no meio de uma interação: ao cruzar o limite, o PIrrai avisa no Telegram que vai reiniciar o contexto e só reseta num momento ocioso (ex.: checagem no loop do telegram_agent.sh quando não há mensagem em processamento e a última interação foi há mais de ~30min; aí apaga state/agent_session_active e confirma o reset no Telegram). Motivo: sessão de 14 MB deixou as respostas perto do timeout de 180s no Pi (20/09); 2 MB mantém resposta sempre ágil. Limite em constante no script pra fácil ajuste.",
+      "status": "backlog",
+      "created": "2026-09-20",
+      "notes": ""
+    },
+    {
+      "id": "1790167738",
+      "title": "Anotador de artigos não-científicos",
+      "description": "Fluxo estruturado (hoje feito manualmente por mim, campo a campo) para anotar artigos/matérias não-acadêmicas (newsletters, posts, reportagens) no repo anotacoes, com: (1) lista de insights extraídos; (2) categorização/tags; (3) relacionamento com notas já existentes no acervo (busca semântica automática); (4) fundamentação — indicar se cada insight vem de opinião do autor ou de experiência/dado/teste relatado; (5) avaliação de relevância (assunto + insights + tema) para o Rodrigo. Diferente do fluxo de artigo científico (anota.sh artigo, que já segue template rígido da taxonomia): este é para conteúdo não-acadêmico, hoje tratado como 'nota' ou 'captura' comuns sem estrutura fixa. Ver exemplo do formato aplicado manualmente: nota 'Inside OpenAI's agentic software factory' (2026-09-23) no repo anotacoes. Definir: novo subcomando anota.sh (ex.: anota.sh artigo-web) com template fixo similar ao de artigo científico, ou seção dedicada dentro de nota.",
+      "status": "backlog",
+      "created": "2026-09-23",
+      "notes": ""
     }
   ]
 }

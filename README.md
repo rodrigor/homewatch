@@ -39,7 +39,7 @@ dashboards web (expostos via Tailscale).
 | **Claude CLI** (Anthropic) | Cérebro do assistente — modo `--print` com `--system-prompt` |
 | **Telegram Bot API** | Interface de chat (long polling) |
 | **Flask / Python 3** | APIs e dashboards (finanças, hábitos, inventário, landing) |
-| **SQLite** | Bancos: `finance.db`, `web/devices.db`, `routerwatch.db`, `bgstats.db` |
+| **SQLite** | Bancos: `finance.db`, `web/devices.db`, `routerwatch.db`. A coleção de boardgames NÃO fica aqui: é `~/boardgames/colecao.db` (o antigo `bgstats.db`, schema em inglês, está em `backups/` e é obsoleto) |
 | **Pi-hole** | DNS + bloqueio de anúncios; `pihole-FTL.db` para histórico DNS |
 | **SNMP / speedtest-ookla** | Telemetria do roteador ER605 dual-WAN |
 | **Grafana** | Painéis de rede/Pi (lê `routerwatch.db`) |
