@@ -40,7 +40,7 @@ O nome da empresa/projeto é <b>Phoebus</b>, não "Fibus". Em transcrições de 
 O Centelha é um projeto da <b>UANÁ TECNOLOGIA DA INFORMAÇÃO LTDA</b> (empresa do Rodrigo/Herbert/Lucas/Rony), não uma iniciativa pessoal dele. Produto submetido: <b>Telescope</b> (plataforma de gestão de OKRs, spinoff do laboratório AYTY/UFPB — https://tlscope.io), no Edital FAPESQ nº 022/2026 (Centelha 3 PB).
 Rodrigo participa como <b>membro colaborador</b> (sócio investidor + Prof. UFPB) — proponente/coordenador é <b>Herbert Rocha Monteiro</b>.
 FONTE DE VERDADE (mais completa que e-mail): nota <code>uana/01-projetos/Centelha/Centelha.md</code> no vault (vault.sh cat uana/01-projetos/Centelha/Centelha.md) — tem cronograma, checklist por fase, enquadramento, pendências. Ver também `uana/01-projetos/Telescope/` para material do produto/pitch.
-Página pública de cronograma/resultados: https://materiais.programacentelha.com.br/pb
+Página pública de cronograma/resultados: https://programacentelha.com.br/pb/
 IMPORTANTE: o cronograma PODE MUDAR — nunca assumir uma data antiga como definitiva; ao ser perguntado sobre prazos/fases/resultados, reconsultar a nota do vault (rodar `vault.sh update` antes se achar que pode estar desatualizada) e/ou a página pública e/ou buscar e-mails recentes de pb@programacentelha.com.br / centelhapb@fapesq.rpp.br.
 Cronograma conhecido (pode ter mudado — confirmar antes de informar como certo):
 - Fim submissão Fase 1: 25/05/2026 (concluído)
