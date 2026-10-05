@@ -101,6 +101,21 @@ case "$cmd" in
     TZ="$TZNAME" jq -rs --arg h "$(hoje)" "$JQFMT"'
       [.[]|select(.dueDate)|select(dia<$h)]|sort_by(.dueDate)|if length==0 then "(vazio)" else (.[]|linha) end' <<< "$TASKS"
     ;;
+  postpone|mover-atrasadas)  # passa todas as atrasadas para hoje (dia todo); uma varredura só
+    TASKS=$(all_tasks) || exit 1
+    nd=$(norm_due hoje)
+    ATR=$(TZ="$TZNAME" jq -rs --arg h "$(hoje)" "$JQFMT"'.[]|select(.dueDate)|select(dia<$h)|"\(.projectId)\t\(.id)\t\(.title)"' <<< "$TASKS")
+    [ -z "$ATR" ] && { echo "Nenhuma atrasada."; exit 0; }
+    n=0
+    while IFS=$'\t' read -r pid id title; do
+      body=$(jq -n --arg id "$id" --arg p "$pid" --arg d "${nd%|*}" --arg tz "$TZNAME" '{id:$id,projectId:$p,dueDate:$d,startDate:$d,isAllDay:true,timeZone:$tz}')
+      if curl -s "${auth[@]}" "${json[@]}" -X POST "$API/task/$id" -d "$body" | jq -e '.id' >/dev/null 2>&1; then
+        echo "movida: $title"; n=$((n+1))
+      else echo "FALHA: $title (#$id)"; fi
+    done <<< "$ATR"
+    cache_drop
+    echo "$n atrasada(s) movida(s) pra hoje"
+    ;;
   week|semana)  # week [dias]  -> atrasadas + próximos N dias (padrão 7)
     ate=$(TZ="$TZNAME" python3 -c 'import sys,datetime as d; print(d.date.today()+d.timedelta(days=int(sys.argv[1])))' "${1:-7}")
     TASKS=$(all_tasks) || exit 1
@@ -145,5 +160,5 @@ case "$cmd" in
     code=$(curl -s -o /dev/null -w '%{http_code}' "${auth[@]}" "$API/project")
     [ "$code" = "200" ] && echo "OK: token válido" || echo "FALHA: token inválido ($code)"
     ;;
-  *) echo "uso: ticktick.sh {add|today|overdue|week|list|done|due|del|shop|projects|test}";;
+  *) echo "uso: ticktick.sh {add|today|overdue|postpone|week|list|done|due|del|shop|projects|test}";;
 esac
