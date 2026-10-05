@@ -2,8 +2,8 @@
 """agenda.py — módulo de agenda do PIrrai.
 
 Lê o iCal (somente leitura) do Google Calendar pessoal (DCX) + tarefas com hora do
-Todoist (API REST), unifica numa visão de agenda e acha horários livres.
-Criar "evento" = criar tarefa no Todoist com data/hora (todoist.sh add) — não há
+TickTick (Open API), unifica numa visão de agenda e acha horários livres.
+Criar "evento" = criar tarefa no TickTick com data/hora (ticktick.sh add) — não há
 escrita via iCal. Sem libs externas além de python-dateutil.
 
 Comandos:
@@ -27,7 +27,7 @@ STATE = os.path.join(ROOT, "state")
 CACHE = os.path.join(STATE, "agenda_dcx.ics")
 TZ = ZoneInfo("America/Recife")
 UTC = timezone.utc
-DEFAULT_TASK_MIN = 30          # duração assumida p/ tarefa Todoist com hora sem duração definida
+DEFAULT_TASK_MIN = 30          # duração assumida p/ tarefa TickTick com hora sem duração definida
 DAY_START, DAY_END = 6, 22     # janela padrão p/ busca de slot livre
 
 def _load_env(path, key):
@@ -204,40 +204,43 @@ def cal_events(ws, we):
         print(f"(aviso: API Calendar indisponível, usando cache iCal: {e})", file=sys.stderr)
         return cal_events_ical(ws, we)
 
-# ---------------- Todoist ----------------
-def todoist_items(ws, we):
-    token = _load_env("todoist.env", "TODOIST_TOKEN")
+# ---------------- TickTick ----------------
+TICKTICK_API = "https://api.ticktick.com/open/v1"
+
+def _ticktick_dt(val):
+    """dueDate/startDate da Open API: 2026-10-06T21:30:00.000+0000"""
+    return datetime.strptime(val[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).astimezone(TZ)
+
+def ticktick_items(ws, we):
+    token = _load_env("ticktick.env", "TICKTICK_TOKEN")
     if not token:
         return []
-    url = "https://api.todoist.com/api/v1/tasks?limit=200"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    def get(path):
+        req = urllib.request.Request(TICKTICK_API + path, headers={"Authorization": f"Bearer {token}"})
+        return json.loads(urllib.request.urlopen(req, timeout=20).read())
     try:
-        data = json.loads(urllib.request.urlopen(req, timeout=20).read())
+        # a Inbox não vem em /project; as tarefas só saem lista a lista
+        pids = ["inbox"] + [p["id"] for p in get("/project") if not p.get("closed")]
+        tasks = [t for pid in pids for t in (get(f"/project/{pid}/data").get("tasks") or [])]
     except Exception as e:
-        print(f"(aviso: Todoist indisponível: {e})", file=sys.stderr)
+        print(f"(aviso: TickTick indisponível: {e})", file=sys.stderr)
         return []
     out = []
-    for t in data.get("results", []):
-        due = t.get("due")
-        if not due:
+    for t in tasks:
+        if t.get("status") != 0 or not t.get("dueDate"):
             continue
-        val = due.get("datetime") or due.get("date") or ""   # v1: due.date pode ser date OU datetime
-        if "T" in val:                                        # tarefa COM hora
-            s = datetime.fromisoformat(val.replace("Z", "+00:00"))
-            if s.tzinfo is None:
-                s = s.replace(tzinfo=TZ)
-            s = s.astimezone(TZ)
-            dur = t.get("duration") or {}
-            mins = dur.get("amount", DEFAULT_TASK_MIN) if dur.get("unit") == "minute" else DEFAULT_TASK_MIN
-            e = s + timedelta(minutes=mins)
-            ad = False
-        else:                                                 # tarefa de dia (sem hora)
-            s = _norm(date.fromisoformat(val), True)
+        due = _ticktick_dt(t["dueDate"])
+        if t.get("isAllDay"):                                 # tarefa de dia (sem hora)
+            s = _norm(due.date(), True)
             e = s + timedelta(days=1)
             ad = True
+        else:                                                 # tarefa COM hora
+            s = _ticktick_dt(t["startDate"]) if t.get("startDate") else due
+            e = due if due > s else s + timedelta(minutes=DEFAULT_TASK_MIN)
+            ad = False
         if s < we and e > ws:
             out.append({"start": s, "end": e, "all_day": ad,
-                        "summary": "✓ " + t.get("content", ""), "source": "todoist"})
+                        "summary": "✓ " + t.get("title", ""), "source": "ticktick"})
     return out
 
 # ---------------- Google Calendar (ESCRITA via OAuth) ----------------
@@ -327,7 +330,7 @@ def gcal_delete(eid):
 
 # ---------------- agenda / livre ----------------
 def agenda(ws, we):
-    items = cal_events(ws, we) + todoist_items(ws, we)
+    items = cal_events(ws, we) + ticktick_items(ws, we)
     items.sort(key=lambda x: (x["start"], not x["all_day"]))
     return items
 

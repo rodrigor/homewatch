@@ -2,7 +2,7 @@
 """gcal.py — cliente Google Calendar (OAuth2) do PIrrai, em Python puro (sem libs externas).
 
 Escrita REAL na agenda do Google (criar/editar/excluir eventos), complementando o
-agenda.py (que só lê iCal + Todoist). Fluxo OAuth "Desktop app" com colagem manual
+agenda.py (que só lê iCal + TickTick). Fluxo OAuth "Desktop app" com colagem manual
 do código (serve em servidor headless). Refresh token guardado em gcal_token.json.
 
 Config em gcal.env:

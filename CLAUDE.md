@@ -6,8 +6,8 @@ Quando tiver dúvida (sobre intenção, classificação, decisão de design, cat
 ## Repos git — sempre pull antes, push ao concluir
 Em qualquer operação num repositório clonado no Pi (homepage, boardgames, eurotrip, anotacoes, etc.), **sempre** `git -C <repo> pull --ff-only` **antes** de editar (o Rodrigo também mexe nesses repos pelo Mac e pode ter avançado o remoto — evita divergência/conflito). Ao concluir a mudança, **enviar (push) direto se o repo for privado** (boardgames, eurotrip, anotacoes — não precisa pedir permissão, é só sincronizar); **na homepage (`rodrigor.github.io`, repo público)** continua valendo a regra de sempre pedir confirmação antes do `git push`, já que publica o site ao vivo. Se o `push` for rejeitado por divergência (alguém empurrou entretanto), não force: puxe de novo e reaplique a mudança por cima do que já está no remoto — nunca sobrescrever o trabalho do Rodrigo.
 
-## Todoist — Agenda
-Ao verificar a agenda (todoist.sh today/hoje/list), o comando `today` já move automaticamente as tarefas atrasadas para hoje e exibe quais foram movidas antes da lista. Sempre informe ao usuário quais tarefas foram movidas (se houver).
+## TickTick: tarefas e agenda
+As tarefas do Rodrigo ficam no TickTick (`ticktick.sh`; token em `ticktick.env`). O Todoist foi abandonado em 2026-10-05 e o `todoist.sh` saiu do repo. O `ticktick.sh today` lista as tarefas de hoje e as atrasadas (marcadas com ⚠), sem mexer na data de nenhuma; para passar uma atrasada para hoje, `ticktick.sh due "<tarefa>" hoje`. A Open API não entende data em linguagem natural: o vencimento vai como `hoje`, `amanha`, `AAAA-MM-DD` ou `AAAA-MM-DD HH:MM`.
 
 ## Agenda — eventos "dia todo" com emoji
 Eventos de dia todo que começam com emoji (🔴🟢🟠 etc.) são Google Meets permanentes dos projetos (Ayty/Portomar/Viva etc.), criados na conta Ayty Business para acesso rápido ao Meet. NÃO são atividades reais. Ignorar ao analisar disponibilidade ou sugerir horários de exercício.
@@ -22,7 +22,7 @@ Ao processar ou relatar um e-mail de compra (Amazon, iFood, etc.), sempre substi
 Sempre que reportar uma transação financeira (listagem, classificação, resumo, pergunta sobre um lançamento), indicar a conta de origem (Nu Rodrigo, Nu Ayla, Cartão Nu Rodrigo, Cartão Nu Ayla, Conta Global, etc.). Usar formato: <b>[Conta]</b> antes ou junto ao valor/descrição.
 
 ## Listas de compras
-Antes de adicionar um item à lista de compras (todoist.sh shop), verificar se item similar já existe para evitar duplicata. Normalizar variações (ex: "fermento" = "pó Royal já cadastrado").
+Antes de adicionar um item à lista de compras (ticktick.sh shop; conferir antes com `ticktick.sh list "Compras"`), verificar se item similar já existe para evitar duplicata. Normalizar variações (ex: "fermento" = "pó Royal já cadastrado").
 
 ## E-mails — endereços a ignorar
 Ao buscar e-mails, ignorar mensagens endereçadas a ale@alepessoa.com.br (não são do Rodrigo). A conta Apple do Rodrigo é rodrigoreboucas@mac.com — e-mails da Apple Store/recibos de compra são enviados para esse endereço @mac.com, não para nenhuma das caixas que o PIrrai acessa.
@@ -64,10 +64,10 @@ Toda transação com "Anthropic" na descrição (assinatura Claude, IOF de volta
 ## Vault — anexos do Plaud
 Anexos/arquivos relacionados ao Plaud (app de gravação com IA — plaud.ai) devem ser salvos em `inbox/dropped/plaud/` no vault-home (pasta já criada). Essa é a pasta padrão pra esse tipo de conteúdo; `inbox/dropped/` (e subpastas) já tem exceção no `.gitignore` liberando qualquer tipo de arquivo, então PDFs/anexos exportados do Plaud vão pro git normalmente.
 
-## Newsletters/conteúdo — ferramentas e links interessantes viram tarefa no Todoist
-Sempre que uma newsletter (ou outro conteúdo processado, ex.: e-mail, print) mencionar uma ferramenta/produto ou um link que valha a pena o Rodrigo conferir depois, criar uma tarefa no Todoist no projeto **Ferramentas**: `todoist.sh add "<nome da ferramenta>" "" "Ferramentas" "" "<resumo curto do que é + link>"`.
+## Newsletters/conteúdo — ferramentas e links interessantes viram tarefa no TickTick
+Sempre que uma newsletter (ou outro conteúdo processado, ex.: e-mail, print) mencionar uma ferramenta/produto ou um link que valha a pena o Rodrigo conferir depois, criar uma tarefa no TickTick na lista **Ferramentas**: `ticktick.sh add "<nome da ferramenta>" "" "Ferramentas" "" "<resumo curto do que é + link>"`.
 - O link colocado na descrição precisa ser a URL REAL do produto (ex.: buscar `nome-da-ferramenta site oficial` via WebSearch), NUNCA o link de rastreamento/redirecionamento do próprio e-mail (newsletters como Evolving AI Insights/AI Secret usam beehiiv e o `href` é um redirect tipo `elinkc04.newsletter...`, não a URL do produto — não usar esse link).
-- Não duplicar: se a ferramenta já tem tarefa aberta no projeto Ferramentas, não recriar.
+- Não duplicar: se a ferramenta já tem tarefa aberta na lista Ferramentas, não recriar.
 - Isso vale tanto para os itens da seção "Trending AI Tools"/"Quick Hits" das newsletters quanto para qualquer ferramenta citada no corpo de uma matéria.
 
 ## Anotações — "anota isso" vai para o repo `anotacoes`

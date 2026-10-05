@@ -1,5 +1,5 @@
 [Unit]
-Description=PIrrai - agenda matinal do Todoist no Telegram
+Description=PIrrai - agenda matinal do TickTick no Telegram
 After=network-online.target
 Wants=network-online.target
 
