@@ -221,7 +221,9 @@ def ticktick_items(ws, we):
     try:
         # a Inbox não vem em /project; as tarefas só saem lista a lista
         pids = ["inbox"] + [p["id"] for p in get("/project") if not p.get("closed")]
-        tasks = [t for pid in pids for t in (get(f"/project/{pid}/data").get("tasks") or [])]
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(8) as ex:                     # em série são ~30s com 40 listas
+            tasks = [t for d in ex.map(lambda pid: get(f"/project/{pid}/data"), pids) for t in (d.get("tasks") or [])]
     except Exception as e:
         print(f"(aviso: TickTick indisponível: {e})", file=sys.stderr)
         return []
